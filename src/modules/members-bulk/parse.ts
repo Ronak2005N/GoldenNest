@@ -138,7 +138,9 @@ export function rowsToDrafts(rows: string[][]): DraftRow[] {
 }
 
 /** The same rows the owner would paste from Excel — used by the on-screen grid. */
-export function gridToDrafts(rows: { name: string; mobile: string; room: string; bed: string; rent: string }[]): DraftRow[] {
+export function gridToDrafts(
+  rows: { name: string; mobile: string; room: string; bed: string; rent: string; advance: string }[],
+): DraftRow[] {
   return rows.map((r, i) => {
     const draft = emptyDraft(i + 1);
     draft.name = r.name.trim();
@@ -147,6 +149,7 @@ export function gridToDrafts(rows: { name: string; mobile: string; room: string;
     const bed = parseNumber(r.bed);
     draft.bedIndex = bed && bed > 0 ? Math.round(bed) : null;
     draft.monthlyRent = parseNumber(r.rent);
+    draft.advance = parseNumber(r.advance);
     return draft;
   });
 }

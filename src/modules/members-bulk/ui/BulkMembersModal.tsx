@@ -25,9 +25,10 @@ interface GridRow {
   room: string;
   bed: string;
   rent: string;
+  advance: string;
 }
 
-const emptyGridRow = (): GridRow => ({ name: '', mobile: '', room: '', bed: '', rent: '' });
+const emptyGridRow = (): GridRow => ({ name: '', mobile: '', room: '', bed: '', rent: '', advance: '' });
 
 const PREVIEW_LIMIT = 40;
 
@@ -225,10 +226,10 @@ export function BulkMembersModal({ open, onClose }: { open: boolean; onClose: ()
           <div>
             <p className="text-base">
               Type the members straight in. Press <strong>Enter</strong> in a cell to jump to the same cell on
-              the next row.
+              the next row. Leave <strong>Advance</strong> empty if none was taken.
             </p>
             <div className="mt-3 overflow-x-auto">
-              <table className="w-full min-w-[640px] border-separate border-spacing-y-1 text-left">
+              <table className="w-full min-w-[760px] border-separate border-spacing-y-1 text-left">
                 <thead>
                   <tr className="meta">
                     <th className="px-2 font-semibold">Name</th>
@@ -236,12 +237,13 @@ export function BulkMembersModal({ open, onClose }: { open: boolean; onClose: ()
                     <th className="px-2 font-semibold">Room</th>
                     <th className="px-2 font-semibold">Bed</th>
                     <th className="px-2 font-semibold">Rent</th>
+                    <th className="px-2 font-semibold">Advance</th>
                   </tr>
                 </thead>
                 <tbody>
                   {grid.map((row, i) => (
                     <tr key={i}>
-                      {(['name', 'mobile', 'room', 'bed', 'rent'] as const).map((col) => (
+                      {(['name', 'mobile', 'room', 'bed', 'rent', 'advance'] as const).map((col) => (
                         <td key={col} className="px-1">
                           <input
                             value={row[col]}
@@ -257,7 +259,7 @@ export function BulkMembersModal({ open, onClose }: { open: boolean; onClose: ()
                                 document.querySelectorAll<HTMLInputElement>('[data-grid-input]'),
                               );
                               const pos = inputs.findIndex((el) => el === e.currentTarget);
-                              const next = inputs[pos + 5]; // same column, next row
+                              const next = inputs[pos + 6]; // same column, next row
                               next?.focus();
                               next?.select();
                             }}
@@ -299,6 +301,7 @@ export function BulkMembersModal({ open, onClose }: { open: boolean; onClose: ()
                     <th className="px-3 py-2 font-semibold">Room</th>
                     <th className="px-3 py-2 font-semibold">Bed</th>
                     <th className="px-3 py-2 font-semibold">Rent</th>
+                    <th className="px-3 py-2 font-semibold">Advance</th>
                     <th className="px-3 py-2 font-semibold">Status</th>
                   </tr>
                 </thead>
@@ -314,6 +317,7 @@ export function BulkMembersModal({ open, onClose }: { open: boolean; onClose: ()
                       </td>
                       <td className="num-sm px-3 py-2">{d.bedIndex ?? '—'}</td>
                       <td className="num-sm px-3 py-2">{d.monthlyRent ?? '—'}</td>
+                      <td className="num-sm px-3 py-2">{d.advance ?? '—'}</td>
                       <td className="px-3 py-2">
                         {d.errors.length ? (
                           <span className="font-semibold text-bad">{d.errors[0]}</span>
