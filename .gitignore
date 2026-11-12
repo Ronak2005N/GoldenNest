@@ -1,0 +1,24 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+*.tsbuildinfo
+
+# local agent tooling (not part of the app)
+.opencode/
+
+# local data backups — these hold member records, keep them off the repo
+GoldenNest_PG_Backup_*.xlsx
+*.xlsx.local
+
+# environment / editor / OS noise
+.env
+.env.*
+!.env.example
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*

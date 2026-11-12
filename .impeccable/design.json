@@ -1,0 +1,245 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-12T00:00:00Z",
+  "title": "Design System: Golden Nest PG Manager",
+  "extensions": {
+    "colorMeta": {
+      "primary": {
+        "role": "primary",
+        "displayName": "Marigold",
+        "canonical": "#b45309",
+        "tonalRamp": [
+          "#fdf1d7",
+          "#b45309",
+          "#92400e",
+          "#d97706"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#0f172a",
+        "tonalRamp": [
+          "#f8fafc",
+          "#475569",
+          "#0f172a",
+          "#1e293b",
+          "#334155"
+        ]
+      },
+      "good": {
+        "role": "good",
+        "displayName": "Green",
+        "canonical": "#047857",
+        "tonalRamp": [
+          "#d1fae5",
+          "#047857",
+          "#1d4ed8"
+        ]
+      },
+      "bad": {
+        "role": "bad",
+        "displayName": "Red",
+        "canonical": "#b91c1c",
+        "tonalRamp": [
+          "#fee2e2",
+          "#b91c1c",
+          "#dc2626"
+        ]
+      },
+      "info": {
+        "role": "info",
+        "displayName": "Sky",
+        "canonical": "#1d4ed8",
+        "tonalRamp": [
+          "#dbeafe",
+          "#1d4ed8",
+          "#3b82f6"
+        ]
+      },
+      "glass": {
+        "role": "neutral",
+        "displayName": "Frosted White",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "rgba(255,255,255,0.82)",
+          "rgba(255,255,255,0.96)",
+          "rgba(255,255,255,0.94)",
+          "rgba(255,255,255,0.91)",
+          "rgba(255,255,255,0.88)",
+          "rgba(255,255,255,0.75)",
+          "rgba(255,255,255,0.64)",
+          "rgba(255,255,255,0.9)",
+          "rgba(255,255,255,0.95)",
+          "rgba(255,255,255,1)",
+          "rgba(240,244,249,0.82)"
+        ]
+      },
+      "chart": {
+        "role": "neutral",
+        "displayName": "Chart Ink",
+        "canonical": "#1e293b",
+        "tonalRamp": [
+          "#0f172a",
+          "#1e293b",
+          "#334155",
+          "#475569",
+          "#94a3b8",
+          "#b45309",
+          "#92400e",
+          "#d97706",
+          "#dfe6ef",
+          "#c3cddb",
+          "#b9c4d3"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Inter",
+        "purpose": "Page titles, section titles, every name"
+      },
+      "body": {
+        "displayName": "Inter",
+        "purpose": "Body text, forms, tables, money columns"
+      },
+      "label": {
+        "displayName": "Inter",
+        "purpose": "Field labels and compact meta lines"
+      },
+      "note": "Self-hosted variable woff2 (latin + latin-ext) bundled in src/assets/fonts — nothing is fetched at runtime."
+    },
+    "shadows": [
+      {
+        "name": "control-soft",
+        "value": "0 1px 2px rgb(15 23 42 / 0.08)",
+        "purpose": "Offset shadow on pressed buttons, pills, and interactive controls"
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-standard",
+        "value": "cubic-bezier(0.4, 0, 0.2, 1)",
+        "purpose": "Default easing for state transitions"
+      },
+      {
+        "name": "ease-out-expo",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "The single authored moment: the modal sheet lifting onto the page (180ms)"
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sm",
+        "value": "640px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Firm pill button with marigold accent, used sparingly",
+      "html": "<button class=\"ds-btn-primary\">Save Member & Assign Bed</button>",
+      "css": ".ds-btn-primary { border-radius: 0.75rem; padding: 0.75rem 1.25rem; font-size: 1rem; font-weight: 600; background: #b45309; color: #fff; border: 1px solid rgba(146,64,14,0.3); box-shadow: 0 1px 2px rgb(15 23 42 / 0.16); cursor: pointer; transition: background 0.15s, transform 0.12s; } .ds-btn-primary:hover { background: #92400e; transform: translateY(-1px); } .ds-btn-primary:active { transform: scale(0.98); }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "White hairline button, used for cancel and secondary actions",
+      "html": "<button class=\"ds-btn-secondary\">Cancel</button>",
+      "css": ".ds-btn-secondary { border-radius: 0.75rem; padding: 0.75rem 1.25rem; font-size: 1rem; font-weight: 600; background: rgba(255,255,255,0.7); color: #0f172a; border: 1px solid #dfe6ef; cursor: pointer; transition: background 0.15s, border-color 0.15s; } .ds-btn-secondary:hover { background: #fff; border-color: #c3cddb; }"
+    },
+    {
+      "name": "Nav Item",
+      "kind": "nav",
+      "refersTo": "navigation",
+      "description": "Pill-shaped navigation item, active filled marigold-soft, inactive text ink",
+      "html": "<button class=\"ds-nav-item\">Rooms</button>",
+      "css": ".ds-nav-item { border-radius: 0.75rem; padding: 0.75rem 1rem; font-size: 1rem; font-weight: 600; } .ds-nav-item.active { background: #fdf1d7; color: #92400e; border: 1px solid rgba(180,83,9,0.3); box-shadow: 0 1px 2px rgb(15 23 42 / 0.08); } .ds-nav-item.inactive { color: #0f172a; border: 1px solid transparent; } .ds-nav-item.inactive:hover { background: rgba(255,255,255,0.7); }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Translucent white card with hairline border, used for content groups",
+      "html": "<div class=\"ds-card\"><h2 class=\"ds-card-title\">Card Title</h2><p class=\"ds-card-body\">Card content goes here.</p></div>",
+      "css": ".ds-card { border-radius: 1rem; border: 1px solid rgba(15,23,42,0.07); background: linear-gradient(165deg, rgba(255,255,255,0.92), rgba(255,255,255,0.7)); box-shadow: inset 0 1px 0 rgba(255,255,255,0.9); padding: 1rem 1.25rem; } .ds-card-title { font-family: Georgia, serif; font-weight: 500; font-size: 1.3rem; margin-bottom: 0.5rem; } .ds-card-body { color: #475569; }"
+    },
+    {
+      "name": "Modal",
+      "kind": "custom",
+      "refersTo": "modal",
+      "description": "Frosted glass modal sheet over a dimmed, blurred page — blur only on the chrome, never on content",
+      "html": "<div class=\"ds-modal\"><div class=\"ds-modal-header\">Header</div><div class=\"ds-modal-body\">Body</div></div>",
+      "css": ".ds-modal { position: fixed; inset: 0; background: rgba(15,23,42,0.4); backdrop-filter: blur(6px); } .ds-modal-sheet { border-radius: 1.25rem; background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(255,255,255,0.91)); backdrop-filter: blur(22px) saturate(1.5); box-shadow: 0 32px 70px -30px rgb(15 23 42 / 0.55); } .ds-modal-header { border-bottom: 1px solid #dfe6ef; padding: 1rem 1.25rem; } .ds-modal-body { padding: 1rem 1.25rem; max-height: 94vh; overflow-y: auto; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Golden Desk",
+    "overview": "The interface feels like plain work sitting on a well-lit desk — glass panels float above a static daylight canvas, never AI-generated gloss or neon. The owner (an elderly PG manager) should never feel confused by decorative noise; every control must shout its size in plain English, and the marigold accent must remain rare enough to mean something.",
+    "keyCharacteristics": [
+      "static daylight background",
+      "marigold accent used sparingly",
+      "hairline borders",
+      "≥52px touch targets",
+      "plain-English labels",
+      "glass only on fixed chrome"
+    ],
+    "rules": [
+      {
+        "name": "The One Voice Rule",
+        "body": "The primary accent (marigold #b45309) is used on ≤10% of any given screen. Its rarity is the point.",
+        "section": "colors"
+      },
+      {
+        "name": "The Hairline Rule",
+        "body": "Borders on content cards are rgba(15,23,42,.07) at 1px. No 2px borders, no faux-depth via thick lines.",
+        "section": "shapes"
+      },
+      {
+        "name": "The Glass-Only-on-Chrome Rule",
+        "body": "`backdrop-filter: blur(18px)` + `saturate(1.6)` appears only on the fixed chrome: sticky header, sidebar, bottom nav, modal sheet. Content cards receive no blur.",
+        "section": "elevation"
+      },
+      {
+        "name": "The One Size Rule",
+        "body": "Root font-size is 18px. All other sizes derive from this scale; no arbitrary pixel sizes.",
+        "section": "typography"
+      },
+      {
+        "name": "The Sentence-Case Rule",
+        "body": "Buttons, field labels, and navigation are written in sentence case with plain words; only short status badges are set in caps.",
+        "section": "typography"
+      },
+      {
+        "name": "The Fixed-Chrome Rule",
+        "body": "Header (sticky, glass-strong), sidebar (floating glass panel, 288px wide on lg), and bottom nav (floating frosted bar, inset from the edges on phones) are always present and never scroll away.",
+        "section": "layout"
+      }
+    ],
+    "dos": [
+      "Use marigold #b45309 on ≤10% of any screen surface area.",
+      "Keep content card borders at 1px rgba(15,23,42,.07).",
+      "Apply backdrop-filter: blur(18px) only on fixed chrome layers; use the strong variant for chrome over scrolling content.",
+      "Set root font-size to 18px; scale all other text from this root.",
+      "Make every touch target ≥52px tall.",
+      "Write all labels in plain English; never abbreviate beyond common understanding.",
+      "Use hairline (1px) borders everywhere; never 2px unless context demands.",
+      "Preserve ≥18px text size never to shrink below accessibility floor."
+    ],
+    "donts": [
+      "Use 2px or heavier borders on content cards — hairline only.",
+      "Apply backdrop-filter: blur to scrolling content or cards — only fixed chrome.",
+      "Add animated washes or moving backgrounds — three static radial washes plus a paper grain, painted once behind everything.",
+      "Use rounded corners smaller than .75rem on controls or larger than 1.25rem on modals.",
+      "Let the primary accent dominate — marigold must stay rare and meaningful.",
+      "Shrink body text below 18px root Equivalent; no text-xs on form labels or primary buttons.",
+      "Use system display faces without a serif fallback; keep the Georgia/Serif pairing.",
+      "Set long labels in caps; caps are for short status badges only.",
+      "Repeat the same instruction on every control in a grid; state it once and keep the tiles quiet."
+    ]
+  }
+}

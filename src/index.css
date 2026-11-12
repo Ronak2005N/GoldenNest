@@ -1,0 +1,290 @@
+@import "tailwindcss" source(none);
+@import "./assets/fonts/inter.css";
+@source "../index.html";
+@source "../src/**/*.{ts,tsx}";
+
+@theme {
+  /* Golden Nest — frosted daylight palette: lit canvas, near-black ink, deep marigold brand */
+  --color-surface: #e9eef5;
+  --color-ink: #0f172a;
+  --color-brand: #b45309;
+  --color-brand-dark: #92400e;
+  --color-brand-soft: #fdf1d7;
+  --color-line: #dfe6ef;
+  --color-line-strong: #c3cddb;
+  --color-good: #047857;
+  --color-good-soft: #d9f2e7;
+  --color-warn: #b45309;
+  --color-warn-soft: #fdf1d7;
+  --color-bad: #b91c1c;
+  --color-bad-soft: #fbe3e3;
+  --color-info: #1d4ed8;
+  --color-info-soft: #dde8fd;
+
+  /* The Tailwind slate ramp is remapped so every slate-* utility in the app
+     lands on this world's palette instead of the stock cool grey. */
+  --color-slate-50: #f5f7fb;
+  --color-slate-100: #eceff5;
+  --color-slate-200: #dde3ec;
+  --color-slate-300: #c6d0de;
+  --color-slate-400: #94a2b8;
+  --color-slate-500: #64748b;
+  --color-slate-600: #475569;
+  --color-slate-700: #334155;
+  --color-slate-800: #1e293b;
+  --color-slate-900: #0f172a;
+
+  /* One voice for the whole app: Inter, self-hosted, variable weight. */
+  --font-sans: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  --font-serif: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  --font-display: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Mono', 'Consolas', monospace;
+}
+
+html {
+  font-size: 18px; /* elderly floor: every rem-based size starts at 18px */
+  background-color: #e9eef5;
+}
+
+body {
+  margin: 0;
+  background: transparent;
+  color: var(--color-ink);
+  font-family: var(--font-serif);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-variant-numeric: proportional-nums;
+}
+
+/* Static daylight washes painted once behind everything — no animation, no repaint on scroll.
+   A faint paper grain keeps the canvas from reading as flat plastic. Both live in a
+   single fixed layer: two fixed layers cost real frames on low-end phones. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(52rem 38rem at 4% -12%, rgb(180 83 9 / 0.16), transparent 62%),
+    radial-gradient(46rem 34rem at 99% -6%, rgb(29 78 216 / 0.13), transparent 60%),
+    radial-gradient(54rem 40rem at 46% 112%, rgb(4 120 87 / 0.12), transparent 64%),
+    radial-gradient(rgb(15 23 42 / 0.05) 0.5px, transparent 0.5px),
+    linear-gradient(180deg, #f6f8fc 0%, #e4eaf3 100%);
+  background-size: auto, auto, auto, 3px 3px, auto;
+}
+
+/* Browser surfaces carry the design: selection, caret, focus, scrollbar. */
+::selection {
+  background: rgb(180 83 9 / 0.22);
+  color: #0f172a;
+}
+input,
+textarea,
+select {
+  caret-color: var(--color-brand);
+}
+
+/* Large, unmistakable focus rings for keyboard users */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid var(--color-brand);
+  outline-offset: 2px;
+  border-radius: 0.75rem;
+}
+
+@layer components {
+  /* ---------------------------------------------------------------- glass
+     Frosted panels for the FIXED chrome only (header, sidebar, bottom nav,
+     modal panel). Backdrop blur is expensive: never on scrolling content. */
+  .glass {
+    background: linear-gradient(180deg, rgb(255 255 255 / 0.84), rgb(255 255 255 / 0.7));
+    border: 1px solid rgb(255 255 255 / 0.75);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.95),
+      0 1px 2px rgb(15 23 42 / 0.05),
+      0 22px 46px -30px rgb(15 23 42 / 0.45);
+    -webkit-backdrop-filter: blur(12px) saturate(1.5);
+    backdrop-filter: blur(12px) saturate(1.5);
+  }
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .glass {
+      background: rgb(255 255 255 / 0.97);
+      border-color: var(--color-line);
+    }
+  }
+
+  /* --------------------------------------------------------- glass (strong)
+     Chrome that floats over scrolling content (bottom nav) needs more body so
+     text passing underneath never competes with the labels. */  .glass-strong {
+    background: linear-gradient(180deg, rgb(255 255 255 / 0.95), rgb(255 255 255 / 0.9));
+    border: 1px solid rgb(255 255 255 / 0.9);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.95),
+      0 1px 2px rgb(15 23 42 / 0.06),
+      0 24px 48px -26px rgb(15 23 42 / 0.5);
+    -webkit-backdrop-filter: blur(10px) saturate(1.5);
+    backdrop-filter: blur(10px) saturate(1.5);
+  }
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .glass-strong {
+      background: rgb(255 255 255 / 0.99);
+      border-color: var(--color-line);
+    }
+  }
+
+  /* The one authored moment: a modal sheet lifts onto the page. Exponential
+     ease-out from the resting state, 180ms, and it never blocks understanding. */
+  .sheet-in {
+    animation: sheet-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .scrim-in {
+    animation: scrim-in 150ms ease-out;
+  }
+  @keyframes sheet-in {
+    from {
+      opacity: 0;
+      transform: translateY(14px) scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+  @keyframes scrim-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* ------------------------------------------------------------ glass panel
+     The modal sheet: frosted-looking paper over the dimmed page. It carries no
+     backdrop-filter on purpose — a blurred sheet re-blurs the whole page on
+     every frame of scrolling inside it, which is what made forms feel laggy. */
+  .glass-panel {
+    background: linear-gradient(180deg, rgb(255 255 255 / 0.995), rgb(255 255 255 / 0.975));
+    border: 1px solid rgb(255 255 255 / 0.9);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 1),
+      0 32px 70px -30px rgb(15 23 42 / 0.55);
+  }
+
+  /* ---------------------------------------------------------------- cards
+     Translucent white with a lit top edge — reads as glass, costs nothing
+     to scroll. Never a backdrop-filter: dozens of these sit on one screen. */  .card {
+    background: rgb(255 255 255 / 0.84);
+    border: 1px solid rgb(15 23 42 / 0.07);
+    border-radius: 1rem;
+    box-shadow: 0 14px 30px -24px rgb(15 23 42 / 0.35);
+  }
+
+  /* Recessed wells inside modals and cards (never nested in a card's own well). */
+  .well {
+    background: rgb(240 244 249 / 0.82);
+    border: 1px solid rgb(15 23 42 / 0.06);
+    border-radius: 0.75rem;
+    box-shadow: inset 0 1px 2px rgb(15 23 42 / 0.05);
+  }
+
+  /* ----------------------------------------------------------------- type */
+  .display {
+    font-family: var(--font-display);
+    font-size: clamp(1.6rem, 3.4vw, 2.35rem);
+    font-weight: 400;
+    line-height: 1.15;
+    letter-spacing: -0.018em;
+    text-wrap: balance;
+  }
+
+  .headline {
+    font-family: var(--font-display);
+    font-size: 1.3rem;
+    font-weight: 500;
+    line-height: 1.3;
+    letter-spacing: -0.012em;
+    text-wrap: balance;
+  }
+
+  .title {
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    font-weight: 500;
+    line-height: 1.4;
+  }
+
+  /* Small meta line above a group of values (never a heading kicker). */
+  .meta {
+    font-size: 0.95rem;
+    line-height: 1.45;
+    color: var(--color-slate-600);
+  }
+
+  /* Big numerals: money and key counts read at 22–28px bold */
+  .num-xl {
+    font-size: 1.55rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+  }
+  .num-lg {
+    font-size: 1.3rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .num-md {
+    font-size: 1.15rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .num-sm {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Instant, non-dizzying feedback only (frequent actions: <200ms) */
+  .press {
+    transition: transform 120ms ease, background-color 150ms ease, border-color 150ms ease,
+      box-shadow 150ms ease, color 150ms ease;
+  }
+  @media (hover: hover) {
+    .press:hover {
+      transform: translateY(-1px);
+    }
+  }
+  .press:active {
+    transform: translateY(0) scale(0.98);
+  }
+
+  /* Long card lists (48 rooms, 14 Wi-Fi links): paint what is on screen only. */
+  .cv-auto {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 300px;
+  }
+
+  .scroll-x {
+    scrollbar-width: thin;
+    scrollbar-color: #b9c4d3 transparent;
+  }
+  .scroll-x::-webkit-scrollbar {
+    height: 8px;
+  }
+  .scroll-x::-webkit-scrollbar-thumb {
+    background: #b9c4d3;
+    border-radius: 8px;
+  }
+  .scroll-x::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
