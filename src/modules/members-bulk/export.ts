@@ -14,12 +14,19 @@ const HEADERS = [
   'Bed',
   'Monthly Rent (₹)',
   'Advance (₹)',
+  'Advance Mode',
+  'Advance Cash (₹)',
+  'Advance UPI (₹)',
+  'Advance Card (₹)',
+  'Advance Date',
   'Joining Date',
   'Occupation',
   'Government ID',
   'Home Address',
   'Status',
 ];
+
+const WIDTHS = [22, 14, 14, 9, 7, 16, 13, 14, 15, 15, 15, 14, 14, 22, 20, 30, 22];
 
 function sheet(wb: XLSX.WorkBook, name: string, rows: (string | number)[][], widths: number[]) {
   const ws = xl().utils.aoa_to_sheet(rows);
@@ -50,6 +57,11 @@ export async function downloadMembersList(state: AppState, branch: BranchFilter)
       m.bedIndex,
       m.monthlyRent ?? '',
       m.advance?.amount ?? 0,
+      m.advance?.mode ?? 'Cash',
+      m.advance?.cash ?? 0,
+      m.advance?.upi ?? 0,
+      m.advance?.card ?? 0,
+      m.advance?.date ?? '',
       m.startDate,
       m.occupation,
       m.govtId,
@@ -57,7 +69,7 @@ export async function downloadMembersList(state: AppState, branch: BranchFilter)
       pos.balance > 0 ? (pos.paid > 0 ? 'PARTIAL — BALANCE DUE' : 'UNPAID') : 'PAID IN FULL',
     ]);
   }
-  sheet(wb, 'Members', rows, [22, 14, 14, 9, 7, 16, 13, 14, 22, 20, 30, 22]);
+  sheet(wb, 'Members', rows, WIDTHS);
   const scope = branch === 'ALL' ? 'All_PGs' : BRANCH_MAP[branch].short.replace(/[^A-Za-z0-9]+/g, '_');
   download(wb, `GoldenNest_Members_${scope}.xlsx`);
 }
@@ -69,9 +81,15 @@ export async function downloadMembersTemplate(branch: BranchFilter) {
   const scope = branch === 'ALL' ? 'PG1' : BRANCH_MAP[branch].short;
   const rows: (string | number)[][] = [
     HEADERS,
-    ['Ravi Kumar', '9845012345', scope, 'G1', '1', 4500, 2000, todayISO(), 'Student', '[Aadhaar Redacted]', '', 'PAID IN FULL'],
-    ['Suresh Babu', '9845076543', scope, 'G1', '2', 4500, 0, todayISO(), 'Student', '[Aadhaar Redacted]', '', 'PAID IN FULL'],
+    [
+      'Ravi Kumar', '9845012345', scope, 'G1', '1', 4500, 2000, 'Cash', 2000, 0, 0, todayISO(),
+      todayISO(), 'Student', '[Aadhaar Redacted]', '', 'PAID IN FULL',
+    ],
+    [
+      'Suresh Babu', '9845076543', scope, 'G1', '2', 4500, 4000, 'Split', 1000, 3000, 0, todayISO(),
+      todayISO(), 'Student', '[Aadhaar Redacted]', '', 'PAID IN FULL',
+    ],
   ];
-  sheet(wb, 'Members', rows, [22, 14, 14, 9, 7, 16, 13, 14, 22, 20, 30, 22]);
+  sheet(wb, 'Members', rows, WIDTHS);
   download(wb, 'GoldenNest_Members_Template.xlsx');
 }

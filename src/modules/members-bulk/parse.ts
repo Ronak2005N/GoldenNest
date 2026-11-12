@@ -1,4 +1,4 @@
-import type { BranchId, Floor, Member, Occupation } from '../../app/store/types';
+import type { BranchId, Floor, Member, Occupation, PaymentModeOrSplit } from '../../app/store/types';
 import { MEMBER_COLUMNS, IMPORT_COLUMN_ORDER, matchHeader } from './columns';
 import type { MemberColumn } from './columns';
 
@@ -11,6 +11,12 @@ export interface DraftRow {
   bedIndex: number | null;
   monthlyRent: number | null;
   advance: number | null;
+  advanceMode: PaymentModeOrSplit | '';
+  advanceModeRaw: string;
+  advanceCash: number | null;
+  advanceUpi: number | null;
+  advanceCard: number | null;
+  advanceDate: string;
   startDate: string;
   occupation: Occupation | '';
   errors: string[];
@@ -36,6 +42,12 @@ export function emptyDraft(line: number): DraftRow {
     bedIndex: null,
     monthlyRent: null,
     advance: null,
+    advanceMode: '',
+    advanceModeRaw: '',
+    advanceCash: null,
+    advanceUpi: null,
+    advanceCard: null,
+    advanceDate: '',
     startDate: '',
     occupation: '',
     errors: [],
@@ -91,6 +103,19 @@ function parseBranch(value: string): BranchId | '' {
   return '';
 }
 
+/** Reads "Cash" / "UPI" / "Card" / "Split" from a cell. Blank means "not told". */
+export function parseAdvanceMode(value: string): PaymentModeOrSplit | '' {
+  const v = value.trim().toLowerCase();
+  if (!v) return '';
+  if (v.startsWith('split')) return 'Split';
+  if (v.startsWith('cash')) return 'Cash';
+  if (v.startsWith('upi') || v.startsWith('gpay') || v.startsWith('phonepe') || v.startsWith('paytm')) {
+    return 'UPI';
+  }
+  if (v.startsWith('card') || v.startsWith('credit') || v.startsWith('debit')) return 'Card';
+  return '';
+}
+
 /** Split pasted text into rows. Tabs win; otherwise fall back to commas. */
 export function splitRows(text: string): string[][] {
   const lines = text
@@ -129,6 +154,12 @@ export function rowsToDrafts(rows: string[][]): DraftRow[] {
     draft.bedIndex = bed && bed > 0 ? Math.round(bed) : null;
     draft.monthlyRent = parseNumber(get('monthlyRent'));
     draft.advance = parseNumber(get('advance'));
+    draft.advanceMode = parseAdvanceMode(get('advanceMode'));
+    draft.advanceModeRaw = get('advanceMode').trim();
+    draft.advanceCash = parseNumber(get('advanceCash'));
+    draft.advanceUpi = parseNumber(get('advanceUpi'));
+    draft.advanceCard = parseNumber(get('advanceCard'));
+    draft.advanceDate = parseDate(get('advanceDate')) ?? '';
     draft.startDate = parseDate(get('startDate')) ?? '';
     draft.occupation = parseOccupation(get('occupation'));
     draft.branch = parseBranch(get('branch'));
@@ -139,7 +170,16 @@ export function rowsToDrafts(rows: string[][]): DraftRow[] {
 
 /** The same rows the owner would paste from Excel — used by the on-screen grid. */
 export function gridToDrafts(
-  rows: { name: string; mobile: string; room: string; bed: string; rent: string; advance: string }[],
+  rows: {
+    name: string;
+    mobile: string;
+    room: string;
+    bed: string;
+    rent: string;
+    advance: string;
+    advanceMode: string;
+    advanceDate: string;
+  }[],
 ): DraftRow[] {
   return rows.map((r, i) => {
     const draft = emptyDraft(i + 1);
@@ -150,6 +190,9 @@ export function gridToDrafts(
     draft.bedIndex = bed && bed > 0 ? Math.round(bed) : null;
     draft.monthlyRent = parseNumber(r.rent);
     draft.advance = parseNumber(r.advance);
+    draft.advanceMode = parseAdvanceMode(r.advanceMode);
+    draft.advanceModeRaw = r.advanceMode.trim();
+    draft.advanceDate = parseDate(r.advanceDate) ?? '';
     return draft;
   });
 }
@@ -245,7 +288,99 @@ export function validateDrafts(
       else if (d.monthlyRent <= 0) d.errors.push('Monthly rent must be more than 0');
     }
     if (d.advance !== null && d.advance < 0) d.errors.push('Advance cannot be negative');
+    for (const part of [d.advanceCash, d.advanceUpi, d.advanceCard]) {
+      if (part !== null && part < 0) d.errors.push('Advance split amounts cannot be negative');
+    }
+    if (d.advanceModeRaw && !d.advanceMode) {
+      d.warnings.push(`Advance mode “${d.advanceModeRaw}” is not known — saved as Cash`);
+    }
+    // A split that does not add up to the advance total would silently lose money.
+    const splitParts = [d.advanceCash, d.advanceUpi, d.advanceCard];
+    const anyPart = splitParts.some((p) => p !== null && p > 0);
+    const splitSum = (d.advanceCash ?? 0) + (d.advanceUpi ?? 0) + (d.advanceCard ?? 0);
+    if (d.advance === null && anyPart) {
+      // A sheet with only the split columns still tells us the advance total.
+      d.advance = splitSum;
+    }
+    if (d.advanceMode === 'Split') {
+      if (!anyPart) {
+        d.errors.push('Split advance needs the Cash, UPI and Card amounts');
+      } else if (d.advance !== null && Math.abs(splitSum - d.advance) > 0.5) {
+        d.errors.push('Advance Cash + UPI + Card must add up to the advance amount');
+      }
+    }
   }
+}
+
+/** The advance record a draft describes, with the mode/split worked out. */
+export interface AdvancePlan {
+  amount: number;
+  mode: PaymentModeOrSplit;
+  cash: number;
+  upi: number;
+  card: number;
+  date: string;
+}
+
+export function planAdvance(d: DraftRow, today: string, fallback?: Member['advance']): AdvancePlan {
+  const amount = d.advance ?? 0;
+  const hasSplitParts = !!(d.advanceCash || d.advanceUpi || d.advanceCard);
+  const date = d.advanceDate || d.startDate || today;
+
+  // The sheet told us the mode — trust it and zero the buckets it does not use.
+  if (d.advanceMode === 'Split') {
+    return {
+      amount,
+      mode: 'Split',
+      cash: d.advanceCash ?? 0,
+      upi: d.advanceUpi ?? 0,
+      card: d.advanceCard ?? 0,
+      date,
+    };
+  }
+  if (d.advanceMode === 'Cash' || d.advanceMode === 'UPI' || d.advanceMode === 'Card') {
+    return {
+      amount,
+      mode: d.advanceMode,
+      cash: d.advanceMode === 'Cash' ? amount : 0,
+      upi: d.advanceMode === 'UPI' ? amount : 0,
+      card: d.advanceMode === 'Card' ? amount : 0,
+      date,
+    };
+  }
+
+  // Split columns without a mode still mean a split.
+  if (hasSplitParts) {
+    return {
+      amount,
+      mode: 'Split',
+      cash: d.advanceCash ?? 0,
+      upi: d.advanceUpi ?? 0,
+      card: d.advanceCard ?? 0,
+      date,
+    };
+  }
+
+  // Nothing said about the mode — an existing member keeps theirs, a new one is Cash.
+  const mode: PaymentModeOrSplit = fallback?.mode ?? 'Cash';
+  if (mode === 'Split') {
+    return {
+      amount,
+      mode,
+      cash: fallback?.cash ?? 0,
+      upi: fallback?.upi ?? 0,
+      card: fallback?.card ?? 0,
+      date,
+    };
+  }
+  return {
+    amount,
+    mode,
+    cash: mode === 'Cash' ? amount : 0,
+    upi: mode === 'UPI' ? amount : 0,
+    card: mode === 'Card' ? amount : 0,
+    date,
+  };
 }
 
 /** Turn valid drafts into members. Existing members with the same mobile are updated. */
@@ -290,7 +425,26 @@ export function draftsToMembers(
       }
       if (d.advance !== null && existingMember.advance.amount !== d.advance) {
         changes.push(`advance ${existingMember.advance.amount} → ${d.advance}`);
-        next.advance = { ...existingMember.advance, amount: d.advance, date: today };
+        const plan = planAdvance(d, today, existingMember.advance);
+        next.advance = {
+          amount: plan.amount,
+          mode: plan.mode,
+          cash: plan.cash,
+          upi: plan.upi,
+          card: plan.card,
+          date: plan.date,
+        };
+      } else if (d.advance !== null && d.advanceMode && existingMember.advance.mode !== d.advanceMode) {
+        changes.push(`advance mode ${existingMember.advance.mode} → ${d.advanceMode}`);
+        const plan = planAdvance(d, today, existingMember.advance);
+        next.advance = {
+          amount: plan.amount,
+          mode: plan.mode,
+          cash: plan.cash,
+          upi: plan.upi,
+          card: plan.card,
+          date: plan.date,
+        };
       }
       if (d.startDate && existingMember.startDate !== d.startDate) {
         next.startDate = d.startDate;
@@ -299,7 +453,7 @@ export function draftsToMembers(
       continue;
     }
 
-    const advance = d.advance ?? 0;
+    const plan = planAdvance(d, today);
     created.push({
       id: `mem_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
       name: d.name,
@@ -315,12 +469,12 @@ export function draftsToMembers(
       startDate: d.startDate || today,
       monthlyRent: d.monthlyRent ?? room?.monthlyRent ?? 0,
       advance: {
-        amount: advance,
-        mode: 'Cash',
-        cash: advance,
-        upi: 0,
-        card: 0,
-        date: d.startDate || today,
+        amount: plan.amount,
+        mode: plan.mode,
+        cash: plan.cash,
+        upi: plan.upi,
+        card: plan.card,
+        date: plan.date,
       },
       payments: [],
       status: 'active',

@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent } from 'react';
 import { Download, FileSpreadsheet, Plus, Upload } from 'lucide-react';
 import { useStore } from '../../../app/store/StoreProvider';
 import { BRANCHES, BRANCH_MAP } from '../../../app/store/branches';
@@ -26,11 +27,38 @@ interface GridRow {
   bed: string;
   rent: string;
   advance: string;
+  advanceMode: string;
+  advanceDate: string;
 }
 
-const emptyGridRow = (): GridRow => ({ name: '', mobile: '', room: '', bed: '', rent: '', advance: '' });
+const emptyGridRow = (): GridRow => ({
+  name: '',
+  mobile: '',
+  room: '',
+  bed: '',
+  rent: '',
+  advance: '',
+  advanceMode: '',
+  advanceDate: '',
+});
 
 const PREVIEW_LIMIT = 40;
+
+const GRID_ADVANCE_MODES = ['Cash', 'UPI', 'Card'] as const;
+
+/** Enter moves to the same column on the next grid row. */
+function jumpToNextRow(e: KeyboardEvent<HTMLInputElement | HTMLSelectElement>) {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  const target = e.currentTarget;
+  const col = target.getAttribute('data-grid-col');
+  const row = Number(target.getAttribute('data-grid-row') ?? '0');
+  const rows = Array.from(document.querySelectorAll<HTMLElement>('[data-grid-row]'));
+  const nextRow = rows.find((el) => Number(el.getAttribute('data-grid-row')) === row + 1);
+  const next = nextRow?.querySelector<HTMLElement>(`[data-grid-col="${col}"]`);
+  next?.focus();
+  if (next instanceof HTMLInputElement) next.select();
+}
 
 export function BulkMembersModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { state, update } = useStore();
@@ -182,11 +210,20 @@ export function BulkMembersModal({ open, onClose }: { open: boolean; onClose: ()
               Columns: Name · Mobile · Room · Bed · Monthly Rent · Advance · Joining Date · Occupation. Your
               own column names are recognised too — a first row of headings is fine.
             </p>
+            <p className="meta mt-1">
+              Advance extras (optional, need a heading row so the columns are recognised):{' '}
+              <strong>Advance Mode</strong> (Cash / UPI / Card / Split) · <strong>Advance Cash (₹)</strong> ·{' '}
+              <strong>Advance UPI (₹)</strong> · <strong>Advance Card (₹)</strong> ·{' '}
+              <strong>Advance Date</strong>.
+            </p>
             <textarea
               value={pasted}
               onChange={(e) => setPasted(e.target.value)}
               spellCheck={false}
-              placeholder={'Ravi Kumar\t9845012345\tG1\t1\t4500\nSuresh Babu\t9845076543\tG1\t2\t4500'}
+              placeholder={
+                'Ravi Kumar\t9845012345\tG1\t1\t4500\t2000\tCash\t2026-11-01\n' +
+                'Suresh Babu\t9845076543\tG1\t2\t4500\t4000\tSplit\tUPI\t3000\tCash\t1000'
+              }
               className="mt-3 h-[180px] w-full rounded-xl border border-line bg-white/80 p-3 font-mono text-base text-ink focus:border-brand focus:outline-none"
             />
           </div>
@@ -213,6 +250,11 @@ export function BulkMembersModal({ open, onClose }: { open: boolean; onClose: ()
                 if (f) void handleFile(f);
               }}
             />
+            <p className="meta">
+              The file&apos;s first sheet is read. Keep a heading row so every column is recognised — including{' '}
+              <strong>Advance</strong>, <strong>Advance Mode</strong> and the Advance Cash / UPI / Card split
+              columns. Leave Advance blank when no deposit was taken.
+            </p>
             {uploadError ? <p className="font-semibold text-bad">{uploadError}</p> : null}
             {uploadName ? (
               <p className="text-base">
@@ -229,7 +271,7 @@ export function BulkMembersModal({ open, onClose }: { open: boolean; onClose: ()
               the next row. Leave <strong>Advance</strong> empty if none was taken.
             </p>
             <div className="mt-3 overflow-x-auto">
-              <table className="w-full min-w-[760px] border-separate border-spacing-y-1 text-left">
+              <table className="w-full min-w-[960px] border-separate border-spacing-y-1 text-left">
                 <thead>
                   <tr className="meta">
                     <th className="px-2 font-semibold">Name</th>
@@ -238,6 +280,8 @@ export function BulkMembersModal({ open, onClose }: { open: boolean; onClose: ()
                     <th className="px-2 font-semibold">Bed</th>
                     <th className="px-2 font-semibold">Rent</th>
                     <th className="px-2 font-semibold">Advance</th>
+                    <th className="px-2 font-semibold">Adv. Mode</th>
+                    <th className="px-2 font-semibold">Adv. Date</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -252,23 +296,53 @@ export function BulkMembersModal({ open, onClose }: { open: boolean; onClose: ()
                               const v = e.target.value;
                               setGrid((g) => g.map((r, idx) => (idx === i ? { ...r, [col]: v } : r)));
                             }}
-                            onKeyDown={(e) => {
-                              if (e.key !== 'Enter') return;
-                              e.preventDefault();
-                              const inputs = Array.from(
-                                document.querySelectorAll<HTMLInputElement>('[data-grid-input]'),
-                              );
-                              const pos = inputs.findIndex((el) => el === e.currentTarget);
-                              const next = inputs[pos + 6]; // same column, next row
-                              next?.focus();
-                              next?.select();
-                            }}
+                            onKeyDown={jumpToNextRow}
                             data-grid-input
+                            data-grid-row={i}
+                            data-grid-col={col}
                             aria-label={`Row ${i + 1} ${col}`}
                             className="min-h-[48px] w-full rounded-lg border border-line bg-white/80 px-3 text-base text-ink focus:border-brand focus:outline-none"
                           />
                         </td>
                       ))}
+                      <td className="px-1">
+                        <select
+                          value={row.advanceMode}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setGrid((g) =>
+                              g.map((r, idx) => (idx === i ? { ...r, advanceMode: v } : r)),
+                            );
+                          }}
+                          data-grid-input
+                          data-grid-row={i}
+                          data-grid-col="advanceMode"
+                          aria-label={`Row ${i + 1} advance mode`}
+                          className="min-h-[48px] w-full rounded-lg border border-line bg-white/80 px-2 text-base text-ink focus:border-brand focus:outline-none"
+                        >
+                          <option value="">Cash (default)</option>
+                          {GRID_ADVANCE_MODES.map((m) => (
+                            <option key={m} value={m}>
+                              {m}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-1">
+                        <input
+                          type="date"
+                          value={row.advanceDate}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setGrid((g) => g.map((r, idx) => (idx === i ? { ...r, advanceDate: v } : r)));
+                          }}
+                          data-grid-input
+                          data-grid-row={i}
+                          data-grid-col="advanceDate"
+                          aria-label={`Row ${i + 1} advance date`}
+                          className="min-h-[48px] w-full rounded-lg border border-line bg-white/80 px-2 text-base text-ink focus:border-brand focus:outline-none"
+                        />
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -317,7 +391,12 @@ export function BulkMembersModal({ open, onClose }: { open: boolean; onClose: ()
                       </td>
                       <td className="num-sm px-3 py-2">{d.bedIndex ?? '—'}</td>
                       <td className="num-sm px-3 py-2">{d.monthlyRent ?? '—'}</td>
-                      <td className="num-sm px-3 py-2">{d.advance ?? '—'}</td>
+                      <td className="num-sm px-3 py-2">
+                        {d.advance ?? '—'}
+                        {d.advanceMode ? (
+                          <span className="ml-1 text-slate-600">{d.advanceMode}</span>
+                        ) : null}
+                      </td>
                       <td className="px-3 py-2">
                         {d.errors.length ? (
                           <span className="font-semibold text-bad">{d.errors[0]}</span>

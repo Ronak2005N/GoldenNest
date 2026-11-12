@@ -7,7 +7,21 @@
  */
 
 export interface MemberColumn {
-  key: 'name' | 'mobile' | 'roomCode' | 'bedIndex' | 'monthlyRent' | 'advance' | 'startDate' | 'occupation' | 'branch';
+  key:
+    | 'name'
+    | 'mobile'
+    | 'roomCode'
+    | 'bedIndex'
+    | 'monthlyRent'
+    | 'advance'
+    | 'advanceMode'
+    | 'advanceCash'
+    | 'advanceUpi'
+    | 'advanceCard'
+    | 'advanceDate'
+    | 'startDate'
+    | 'occupation'
+    | 'branch';
   label: string;
   aliases: string[];
   hint: string;
@@ -61,6 +75,36 @@ export const MEMBER_COLUMNS: MemberColumn[] = [
     hint: 'Security deposit already collected',
   },
   {
+    key: 'advanceMode',
+    label: 'Advance Mode',
+    aliases: ['advancemode', 'advancepaymentmode', 'advancepaidvia', 'advancevia'],
+    hint: 'How the advance was received — Cash, UPI, Card or Split',
+  },
+  {
+    key: 'advanceCash',
+    label: 'Advance Cash (₹)',
+    aliases: ['advancecash', 'advancecashamount', 'advancepaidincash'],
+    hint: 'Part of the advance received in cash (only for Split)',
+  },
+  {
+    key: 'advanceUpi',
+    label: 'Advance UPI (₹)',
+    aliases: ['advanceupi', 'advanceupiamount', 'advancepaidinupi'],
+    hint: 'Part of the advance received by UPI (only for Split)',
+  },
+  {
+    key: 'advanceCard',
+    label: 'Advance Card (₹)',
+    aliases: ['advancecard', 'advancecardamount', 'advancepaidincard'],
+    hint: 'Part of the advance received by card (only for Split)',
+  },
+  {
+    key: 'advanceDate',
+    label: 'Advance Date',
+    aliases: ['advancedate', 'dateofadvance', 'advancepaidon', 'advanceondate'],
+    hint: 'Date the advance money was received',
+  },
+  {
     key: 'startDate',
     label: 'Joining Date',
     aliases: ['startdate', 'joiningdate', 'date', 'fromdate', 'dateofjoining', 'start'],
@@ -80,7 +124,29 @@ export const MEMBER_COLUMNS: MemberColumn[] = [
   },
 ];
 
-export const IMPORT_COLUMN_ORDER: MemberColumn['key'][] = MEMBER_COLUMNS.map((c) => c.key);
+/**
+ * The column order assumed when a pasted/uploaded sheet has no header row.
+ *
+ * The first nine are the long-standing order (Name → PG Branch); the advance
+ * extras come after them so an old 9-column paste still lands on the right
+ * fields. Sheets with a header row can use any order.
+ */
+export const IMPORT_COLUMN_ORDER: MemberColumn['key'][] = [
+  'name',
+  'mobile',
+  'roomCode',
+  'bedIndex',
+  'monthlyRent',
+  'advance',
+  'startDate',
+  'occupation',
+  'branch',
+  'advanceMode',
+  'advanceCash',
+  'advanceUpi',
+  'advanceCard',
+  'advanceDate',
+];
 
 /** Header row → column key map. Returns null when the row is not a header. */
 export function matchHeader(cells: string[]): Partial<Record<MemberColumn['key'], number>> | null {
