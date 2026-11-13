@@ -61,7 +61,7 @@ async function waitForText(page: puppeteer.Page, text: string, timeout = 6000): 
 
 /** The saved app state, read straight out of localStorage. */
 async function savedState(page: puppeteer.Page): Promise<any> {
-  return page.evaluate(() => JSON.parse(localStorage.getItem('golden-nest-state-v2') ?? '{}'));
+  return page.evaluate(() => JSON.parse(localStorage.getItem('golden-nest-state-v3') ?? '{}'));
 }
 
 /** A member with one paid month, seeded directly into storage. */
@@ -115,10 +115,10 @@ async function main() {
   // --- seed one member ---------------------------------------------------------
   await page.goto(`${BASE}/?page=members`, { waitUntil: 'networkidle0' });
   await page.evaluate((member) => {
-    const raw = localStorage.getItem('golden-nest-state-v2');
+    const raw = localStorage.getItem('golden-nest-state-v3');
     const state = raw ? JSON.parse(raw) : {};
     state.members = [member];
-    localStorage.setItem('golden-nest-state-v2', JSON.stringify(state));
+    localStorage.setItem('golden-nest-state-v3', JSON.stringify(state));
   }, SEED_MEMBER);
   await page.goto(`${BASE}/?page=members`, { waitUntil: 'networkidle0' });
   await sleep(700);

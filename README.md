@@ -75,13 +75,16 @@ npm run preview  # serve the production build
 - **Privacy:** fresh installs start with **no sample people and no demo rows** (owner decision, 12 Nov
   2026 — zero members, staff, water, EB, lease, catering and provision entries); every ID field
   defaults to `"[Aadhaar Redacted]"` — never a numeric ID. Only the setup is seeded — 48 rooms, 14 EB
-  meters, the owner's own Wi-Fi connections and passwords, the can rate and the 11 item buttons —
-  and "Load Demo Data Again" is the only way to bring sample rows back.
+  meters, the owner's own Wi-Fi connections and passwords, the can rate and the 11 item buttons.
+  Demo amounts cannot be loaded from the interface.
 - **"Start From Zero" really clears the books:** every PG and every month goes back to ₹0 — members,
   left-PG members, payments, arrears, staff, water, EB bills, lease, catering, Wi-Fi recharges,
   provisions, supplier credit and closed months. The cleared books are written straight to the device
   and the screen is rebuilt from them, the dashboard says once that it happened, and two open tabs
   stay in step so an old tab can never put the old numbers back.
+- **Existing browsers are moved to the empty books automatically:** the old saved file remains
+  untouched on the device as a safety copy, while the new books start with no transactions or
+  rupee amounts. Rooms, meters, Wi-Fi connections, item buttons and the can rate are carried over.
 
 ## Tests
 

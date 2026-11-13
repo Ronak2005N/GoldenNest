@@ -30,7 +30,7 @@ There is no Persuade surface. No marketing language anywhere in the UI.
 9. P&L dashboard: 5 big-number cards + bar (branch comparison), donut (expense breakdown),
    line (6-month net profit) charts. A finished month is reported **as of its last day**, and a
    month the owner has **closed** cannot be changed by accident until it is unlocked.
-10. Two-way `.xlsx` backup/restore (SheetJS), plus reset-to-sample / reset-to-empty.
+10. Two-way `.xlsx` backup/restore (SheetJS), plus reset-to-empty.
 All state lives in `localStorage`. Zero server, zero database.
 
 ## Non-negotiable constraints
@@ -56,13 +56,15 @@ All state lives in `localStorage`. Zero server, zero database.
   installs start with zero members and staff ("start real records"). Fresh installs are also free of
   every demo row: no water, lease, catering, EB or provision samples are seeded either. Only the
   *setup* is present — 48 rooms, 14 EB meters, the owner's own Wi-Fi connections and passwords, the
-  can rate and the 11 item buttons. "Load Demo Data Again" is the only way to bring sample rows back.
+  can rate and the 11 item buttons. Demo amounts cannot be loaded from the interface.
 - "Start From Zero" clears **everything — in every PG and in every month**: members, left-PG members,
   payments, arrears, staff, water, EB bills, lease, catering, Wi-Fi recharges, provisions, supplier
   credit and closed months. The cleared books are written straight to the device and the screen is
   rebuilt from them, so the owner can see the books at ₹0; the dashboard says so once. Two tabs of
   the app stay in step (a clear in one tab clears the other), so an old tab can never put the old
-  numbers back. Member import/export is verified against the sample backup
+  numbers back. Existing browsers are moved to the empty books automatically on update; the old
+  saved file remains untouched as a safety copy, and only setup survives. Member import/export is
+  verified against the sample backup
   `GoldenNest_PG_Backup_2026-11-11.xlsx` at the project root (Aadhaar redacted throughout).
 - Accent colour: deep marigold `#B45309` (user choice) on warm white `#F8FAFC`, ink `#0F172A`.
 - Default daily rate ₹500/day, default can rate ₹20/can, both editable.

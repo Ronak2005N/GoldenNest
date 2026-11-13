@@ -37,11 +37,11 @@ async function main() {
     // A saved state that is not the data we saved: valid JSON, broken shape.
     const broken = JSON.stringify({ version: 1, rooms: [], members: [], ebMeters: null, staff: [], wifi: [] });
     await page.evaluate((raw) => {
-      localStorage.setItem('golden-nest-state-v2', raw);
+      localStorage.setItem('golden-nest-state-v3', raw);
     }, broken);
     await page.goto(`${BASE}/?page=dashboard`, { waitUntil: 'networkidle0' });
     await sleep(900);
-    const after = await page.evaluate(() => localStorage.getItem('golden-nest-state-v2') ?? '');
+    const after = await page.evaluate(() => localStorage.getItem('golden-nest-state-v3') ?? '');
     const bodyText = await page.evaluate(() => document.body.innerText || '');
     repro(
       'a broken saved state is replaced by the sample data and written back over the original',

@@ -20,6 +20,7 @@ import {
   vacatedDefaulters,
 } from '../src/app/store/selectors';
 import { emptyState, seedSampleState } from '../src/app/store/seed';
+import { migrateState } from '../src/app/store/migrate';
 import { zeroedState } from '../src/app/store/zero';
 import type { AppState } from '../src/app/store/types';
 import { currentMonthKey } from '../src/shared/lib/dates';
@@ -129,6 +130,21 @@ console.log('\n=== “Start From Zero” clears the data and keeps the setup ===
   check('the rooms are kept', cleared.rooms.length, used.rooms.length);
   check('the EB meters are kept', cleared.ebMeters.length, used.ebMeters.length);
   check('the item buttons are kept', cleared.provisionChips.length, used.provisionChips.length);
+}
+
+console.log('\n=== An existing browser is moved to empty books ===');
+{
+  // The old browser file may contain the demo rows that were visible before.
+  // The one-time move must keep only the setup and clear every rupee.
+  const legacy = migrateState(seedSampleState());
+  const cleared = zeroedState(legacy);
+  check('the old demo expenses are cleared', expensesFor(cleared, 'ALL', key).total, 0);
+  check('the old demo provisions are cleared', cleared.provisionExpenses.length, 0);
+  check('the old demo EB bills are cleared', cleared.ebBills.length, 0);
+  check('the old demo leases are cleared', cleared.leasePayments.length, 0);
+  check('the old demo catering is cleared', cleared.catering.length, 0);
+  check('the setup is carried across', cleared.rooms.length, legacy.rooms.length);
+  check('the Wi-Fi setup is carried across', cleared.wifi.length, legacy.wifi.length);
 }
 
 console.log('\n=== Every PG and every month is empty after the clear ===');

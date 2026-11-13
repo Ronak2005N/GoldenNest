@@ -286,15 +286,10 @@ export function DashboardPage() {
 }
 
 function ResetButtons() {
-  const { resetToSample, resetToEmpty } = useStore();
+  const { resetToEmpty } = useStore();
   return (
-    <>
-      <Btn variant="danger" onClick={resetToEmpty}>
-        Start From Zero (clear ALL data &mdash; every PG, every month)
-      </Btn>
-      <Btn variant="secondary" onClick={resetToSample}>
-        Load Demo Data Again (sample rows to try the screens)
-      </Btn>
-    </>
+    <Btn variant="danger" onClick={resetToEmpty}>
+      Start From Zero (clear ALL data &mdash; every PG, every month)
+    </Btn>
   );
 }

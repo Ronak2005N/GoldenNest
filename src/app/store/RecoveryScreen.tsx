@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { AlertTriangle, Download, Upload } from 'lucide-react';
 import type { AppState } from './types';
 import { migrateState } from './migrate';
-import { emptyState, seedSampleState } from './seed';
+import { emptyState } from './seed';
 import { applyWorkbook, readWorkbook } from '../../modules/excel-sync/import';
 import { longDate } from '../../shared/lib/dates';
 import { Badge, Btn, Card, Modal, PageIntro } from '../../shared/ui';
@@ -38,7 +38,7 @@ export function RecoveryScreen({
       const wb = await readWorkbook(file);
       // The backup file is the whole truth — the rooms, Wi-Fi and meters it
       // carries come with it.
-      const next = applyWorkbook(wb, migrateState(seedSampleState()));
+      const next = applyWorkbook(wb, migrateState(emptyState()));
       onRestore(next);
     } catch {
       setError('That file could not be read. Please choose the .xlsx backup you downloaded from the app.');

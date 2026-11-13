@@ -10,6 +10,7 @@ import * as XLSX from 'xlsx';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { seedSampleState } from '../src/app/store/seed';
 
 const BASE = 'http://localhost:4173';
 const PAGES = ['dashboard', 'rooms', 'members', 'rent', 'water', 'eb', 'staff', 'wifi', 'provisions'];
@@ -394,7 +395,7 @@ async function main() {
     fs.rmSync(downloadDir, { recursive: true, force: true });
   }
 
-  // ---------- 7. bulk member entry: paste rows → preview → import ----------
+  // ---------- 8. bulk member entry: paste rows → preview → import ----------
   {
     const page = await fresh(browser, 'members');
     await clickByText(page, 'button', 'Add Many Members');
@@ -433,7 +434,7 @@ async function main() {
     await page.close();
   }
 
-  // ---------- 8. water: a part-paid can bill says PART PAID, never PAID ----------
+  // ---------- 9. water: a part-paid can bill says PART PAID, never PAID ----------
   {
     const page = await fresh(browser, 'water');
     // Log some cans for this month so there is a bill to settle.
@@ -460,19 +461,81 @@ async function main() {
     await page.close();
   }
 
-  // ---------- 9. "Start From Zero": the books must really be empty ----------
+  // ---------- 10. an existing v2 browser is automatically moved to empty v3 books ----------
+  {
+    const page = await newPage(browser, 1440, 900);
+    await page.goto(`${BASE}/?page=dashboard`, { waitUntil: 'networkidle0' });
+    await page.evaluate((legacyRaw) => {
+      localStorage.clear();
+      localStorage.setItem('golden-nest-state-v2', legacyRaw);
+    }, JSON.stringify(seedSampleState()));
+    await page.goto(`${BASE}/?page=dashboard`, { waitUntil: 'networkidle0' });
+    await sleep(800);
+
+    const migrated = await page.evaluate(() => {
+      const raw = localStorage.getItem('golden-nest-state-v3');
+      const legacy = localStorage.getItem('golden-nest-state-v2');
+      if (!raw) return null;
+      const state = JSON.parse(raw);
+      return {
+        expenses: state.ebBills?.length ?? -1,
+        provisions: state.provisionExpenses?.length ?? -1,
+        leases: state.leasePayments?.length ?? -1,
+        catering: state.catering?.length ?? -1,
+        water: state.waterCans?.length ?? -1,
+        members: state.members?.length ?? -1,
+        rooms: state.rooms?.length ?? -1,
+        meters: state.ebMeters?.length ?? -1,
+        wifi: state.wifi?.length ?? -1,
+        legacyStillThere: !!legacy,
+      };
+    });
+    check('the old browser file is kept as a safety copy', migrated?.legacyStillThere, JSON.stringify(migrated));
+    check('the old expenses are not active after the update', migrated?.expenses === 0, JSON.stringify(migrated));
+    check('the old provisions are not active after the update', migrated?.provisions === 0, JSON.stringify(migrated));
+    check('the old leases are not active after the update', migrated?.leases === 0, JSON.stringify(migrated));
+    check('the old catering is not active after the update', migrated?.catering === 0, JSON.stringify(migrated));
+    check('the old water rows are not active after the update', migrated?.water === 0, JSON.stringify(migrated));
+    check('the old members are not active after the update', migrated?.members === 0, JSON.stringify(migrated));
+    check('the setup is carried into the empty books', migrated?.rooms === 48 && migrated?.meters === 14 && migrated?.wifi === 14, JSON.stringify(migrated));
+
+    const migratedText = await page.evaluate(() => document.body.innerText);
+    check(
+      'the dashboard opens at zero after the update',
+      /Total Revenue Collected\s+₹0/.test(migratedText) &&
+        /Total Pending Rent \(Defaulters\)\s+₹0/.test(migratedText) &&
+        /Total Expenses This Month\s+₹0/.test(migratedText),
+      migratedText.slice(migratedText.indexOf('Total Revenue Collected'), migratedText.indexOf('Total Revenue Collected') + 120),
+    );
+    check('the owner is told the books were cleared', await hasText(page, 'Everything was cleared on'));
+    await page.close();
+  }
+
+  // ---------- 11. "Start From Zero": the books must really be empty ----------
   {
     const page = await fresh(browser, 'dashboard');
-    // Put real records on the device first: demo rows in every PG and month.
-    await clickByText(page, 'button', 'Load Demo Data Again');
-    await sleep(800);
+    // Put real records on the device first: a member and a payment.
+    await page.goto(`${BASE}/?page=rooms`, { waitUntil: 'networkidle0' });
+    await sleep(300);
+    await clickByAriaLabel(page, 'tap to admit');
+    await waitForText(page, 'Add New Member');
+    await page.type('input[placeholder="Type the full name"]', 'Zero Test');
+    await page.type('input[placeholder="98450 12345"]', '9845012398');
+    const numbers = await page.$$('[role="dialog"] input[type="number"]');
+    if (numbers.length > 1) await numbers[0].type('8500');
+    await clickByText(page, 'button', 'Save Member & Assign Bed');
+    await sleep(500);
+    await page.goto(`${BASE}/?page=dashboard`, { waitUntil: 'networkidle0' });
+    await sleep(500);
     const beforeText = await page.evaluate(() => document.body.innerText);
     check(
-      'the demo data is on screen before the clear',
-      !/Total Expenses This Month\s+₹0/.test(beforeText),
-      beforeText.slice(beforeText.indexOf('Total Expenses This Month'), beforeText.indexOf('Total Expenses This Month') + 40),
+      'the real data is on screen before the clear',
+      /Total Pending Rent \(Defaulters\)\s+₹(?!0\b)/.test(beforeText),
+      beforeText.slice(beforeText.indexOf('Total Pending Rent'), beforeText.indexOf('Total Pending Rent') + 50),
     );
 
+    await page.goto(`${BASE}/?page=dashboard`, { waitUntil: 'networkidle0' });
+    await sleep(300);
     await clickByText(page, 'button', 'Start From Zero');
     // The screen is rebuilt from the cleared file, so wait for the reload.
     await page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 15000 }).catch(() => undefined);
@@ -489,11 +552,16 @@ async function main() {
       /Total Expenses This Month\s+₹0/.test(afterText),
       afterText.slice(afterText.indexOf('Total Expenses This Month'), afterText.indexOf('Total Expenses This Month') + 40),
     );
+    check(
+      'the pending rent is zero after the clear',
+      /Total Pending Rent \(Defaulters\)\s+₹0/.test(afterText),
+      afterText.slice(afterText.indexOf('Total Pending Rent'), afterText.indexOf('Total Pending Rent') + 50),
+    );
     check('the owner is told the books were cleared', await hasText(page, 'Everything was cleared on'));
     check(
       'no record is left on the device',
       await page.evaluate(() => {
-        const raw = localStorage.getItem('golden-nest-state-v2');
+        const raw = localStorage.getItem('golden-nest-state-v3');
         if (!raw) return false;
         const s = JSON.parse(raw);
         let payments = 0;
@@ -519,13 +587,13 @@ async function main() {
       }),
     );
     check('the setup is still there', await page.evaluate(() => {
-      const s = JSON.parse(localStorage.getItem('golden-nest-state-v2') || '{}');
+      const s = JSON.parse(localStorage.getItem('golden-nest-state-v3') || '{}');
       return s.rooms?.length === 48 && s.ebMeters?.length === 14 && s.wifi?.length === 14;
     }));
     await page.close();
   }
 
-  // ---------- 10. dashboard: the liability card covers deposits, advance rent and staff ----------
+  // ---------- 11. dashboard: the liability card covers deposits, advance rent and staff ----------
   {
     const page = await fresh(browser, 'dashboard');
     check(

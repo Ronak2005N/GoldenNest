@@ -1,13 +1,21 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { AppState, BranchFilter } from './types';
-import { emptyState, seedSampleState } from './seed';
+import { emptyState } from './seed';
 import { migrateState } from './migrate';
 import { zeroedState } from './zero';
 import { RecoveryScreen } from './RecoveryScreen';
 import { todayISO } from '../../shared/lib/dates';
+import { LEGACY_STATE_KEY, STATE_KEY } from './storageKeys';
 
-const STATE_KEY = 'golden-nest-state-v2';
+/**
+ * The active books.
+ *
+ * This key changed for the one-time move to empty books. The previous v2 file
+ * remains untouched on the device as a safety copy, but it is never loaded as
+ * the active books. This also stops an old browser tab from writing its old
+ * demo rows back over the cleared books.
+ */
 const BRANCH_KEY = 'golden-nest-branch-v1';
 /**
  * A one-time note that the books were cleared, so the dashboard can tell the
@@ -16,7 +24,7 @@ const BRANCH_KEY = 'golden-nest-branch-v1';
 export const CLEARED_KEY = 'golden-nest-cleared-at';
 
 interface Boot {
-  /** The state to start with (sample data only on a brand new device). */
+  /** The state to start with (always the empty books, never sample data). */
   state: AppState;
   /** True when a saved file exists but could not be read. */
   corrupted: boolean;
@@ -36,12 +44,48 @@ interface Boot {
  */
 function loadState(): Boot {
   let raw: string | null = null;
+  let legacyRaw: string | null = null;
   try {
     raw = localStorage.getItem(STATE_KEY);
+    legacyRaw = localStorage.getItem(LEGACY_STATE_KEY);
   } catch {
     // Storage is not readable at all (private mode, blocked cookies). There is
     // no saved file to lose, so the app starts empty.
     return { state: migrateState(emptyState()), corrupted: false, damaged: '' };
+  }
+
+  if (!raw && legacyRaw) {
+    /**
+     * Move an existing v2 installation into the empty v3 books.
+     *
+     * The old file is deliberately left untouched as a safety copy. Only the
+     * setup is carried across (rooms, meters, Wi-Fi connections, item buttons
+     * and the can rate); every transaction, payment, member and rupee is
+     * cleared. This is the automatic one-time reset requested by the owner:
+     * an already-open browser must not keep restoring the old demo amounts.
+     */
+    try {
+      const legacy = JSON.parse(legacyRaw) as AppState;
+      if (
+        legacy &&
+        typeof legacy === 'object' &&
+        Array.isArray(legacy.rooms) &&
+        Array.isArray(legacy.members)
+      ) {
+        const cleared = zeroedState(migrateState(legacy));
+        try {
+          localStorage.setItem(STATE_KEY, JSON.stringify(cleared));
+          localStorage.setItem(CLEARED_KEY, todayISO());
+        } catch {
+          // The empty state is still safe on screen. The normal save warning
+          // will tell the owner if this device cannot store it.
+        }
+        return { state: cleared, corrupted: false, damaged: '' };
+      }
+    } catch {
+      // A broken legacy file is only an old safety copy. It must not stop the
+      // new, empty books from opening.
+    }
   }
 
   if (!raw) {
@@ -76,7 +120,6 @@ interface StoreValue {
   state: AppState;
   update: (fn: (s: AppState) => AppState) => void;
   replaceState: (next: AppState) => void;
-  resetToSample: () => void;
   resetToEmpty: () => void;
   branch: BranchFilter;
   setBranch: (b: BranchFilter) => void;
@@ -168,16 +211,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const replaceState = useCallback((next: AppState) => setState(next), []);
 
-  const resetToSample = useCallback(() => {
-    if (
-      window.confirm(
-        'Load the demo data again? It adds sample water, EB, lease, catering and provision rows so you can see how the screens behave. This replaces everything currently saved.',
-      )
-    ) {
-      setState(migrateState(seedSampleState()));
-    }
-  }, []);
-
   /**
    * Starts the business from zero.
    *
@@ -227,8 +260,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ state, update, replaceState, resetToSample, resetToEmpty, branch, setBranch, saveFailed }),
-    [state, update, replaceState, resetToSample, resetToEmpty, branch, setBranch, saveFailed],
+    () => ({ state, update, replaceState, resetToEmpty, branch, setBranch, saveFailed }),
+    [state, update, replaceState, resetToEmpty, branch, setBranch, saveFailed],
   );
 
   // Damaged data file: the app stops here instead of showing sample data.

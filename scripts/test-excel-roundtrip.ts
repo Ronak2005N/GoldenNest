@@ -4,7 +4,7 @@
  */
 import * as XLSX from 'xlsx';
 import fs from 'node:fs';
-import { seedSampleState } from '../src/app/store/seed';
+import { emptyState, seedSampleState } from '../src/app/store/seed';
 import { buildWorkbook } from '../src/modules/excel-sync/export';
 import { applyWorkbook } from '../src/modules/excel-sync/import';
 import { loadXlsx } from '../src/modules/excel-sync/xlsx-lazy';
@@ -22,14 +22,13 @@ function check(label: string, actual: unknown, expected: unknown) {
 
 const state = seedSampleState();
 
-// --- seed contract (owner decision, 12 Nov 2026: fresh installs carry NO sample
-// members or staff; rooms, Wi-Fi, water, EB, lease, catering and provision rows
-// stay so the screens still demonstrate themselves) ---
+// --- live-app contract (owner decision, 12 Nov 2026: fresh installs carry NO sample
+// members or staff, and no transaction rows at all) ---
 const key = currentMonthKey();
-check('seed active members', state.members.filter((m) => m.status === 'active').length, 0);
-check('seed vacated members', state.members.filter((m) => m.status === 'vacated').length, 0);
-check('seed staff', state.staff.length, 0);
-check('seed rooms total', state.rooms.length, 48);
+check('live active members', state.members.filter((m) => m.status === 'active').length, 0);
+check('live vacated members', state.members.filter((m) => m.status === 'vacated').length, 0);
+check('live staff', state.staff.length, 0);
+check('live rooms total', state.rooms.length, 48);
 check('PG1 rooms', state.rooms.filter((r) => r.branch === 'PG1').length, 12);
 check('PG2 rooms', state.rooms.filter((r) => r.branch === 'PG2').length, 10);
 check('PG3 rooms', state.rooms.filter((r) => r.branch === 'PG3').length, 10);
@@ -44,7 +43,8 @@ check('defaulters count', defaulters(state, 'ALL').length, 0);
 check('pending rent total', defaulters(state, 'ALL').reduce((n, d) => n + d.balance, 0), 0);
 check('refundable advance held', refundableAdvanceHeld(state, 'ALL'), 0);
 check('aadhaar privacy (no numeric IDs)', state.members.every((m) => m.govtId === '[Aadhaar Redacted]'), true);
-check('PnL runs (seed still carries expenses)', pnlFor(state, 'ALL', key).expenses.total > 0, true);
+check('the demo fixture carries expenses', pnlFor(state, 'ALL', key).expenses.total > 0, true);
+check('the live app starts with zero expenses', pnlFor(emptyState(), 'ALL', key).expenses.total, 0);
 
 // --- export to .xlsx (same bytes the browser download produces) ---
 await loadXlsx(); // SheetJS is lazy-loaded in the app; the test primes it here

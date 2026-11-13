@@ -128,7 +128,7 @@ async function main() {
     const damaged = JSON.stringify({ version: 1, rooms: 'broken', members: [], staff: [] });
     await page.goto(`${BASE}/?page=dashboard`, { waitUntil: 'networkidle0' });
     await page.evaluate((raw) => {
-      localStorage.setItem('golden-nest-state-v2', raw);
+      localStorage.setItem('golden-nest-state-v3', raw);
     }, damaged);
     await page.goto(`${BASE}/?page=dashboard`, { waitUntil: 'networkidle0' });
     await sleep(900);
@@ -142,7 +142,7 @@ async function main() {
     check('the damaged file can be kept for safekeeping', await hasText(page, 'Download the damaged data file'));
     check('no fake members are shown', !(await hasText(page, 'Safety Test')));
 
-    const after = await page.evaluate(() => localStorage.getItem('golden-nest-state-v2') ?? '');
+    const after = await page.evaluate(() => localStorage.getItem('golden-nest-state-v3') ?? '');
     check('the damaged file is left exactly as it was', after === damaged, after.slice(0, 60));
 
     // Reloading again must still show the recovery screen (nothing was overwritten).
@@ -159,10 +159,10 @@ async function main() {
     await page.goto(`${BASE}/?page=members`, { waitUntil: 'networkidle0' });
     await sleep(600);
     await page.evaluate((member) => {
-      const raw = localStorage.getItem('golden-nest-state-v2');
+      const raw = localStorage.getItem('golden-nest-state-v3');
       const state = raw ? JSON.parse(raw) : {};
       state.members = [member];
-      localStorage.setItem('golden-nest-state-v2', JSON.stringify(state));
+      localStorage.setItem('golden-nest-state-v3', JSON.stringify(state));
     }, SEED_MEMBER);
     await page.goto(`${BASE}/?page=members`, { waitUntil: 'networkidle0' });
     await sleep(700);
@@ -203,7 +203,7 @@ async function main() {
         check('the summary says nothing was deleted', dialogs.some((d) => d.includes('0 deleted')));
 
         const state = await page.evaluate(() =>
-          JSON.parse(localStorage.getItem('golden-nest-state-v2') ?? '{}'),
+          JSON.parse(localStorage.getItem('golden-nest-state-v3') ?? '{}'),
         );
         check('the member is still on the device', state.members?.some((m: any) => m.id === 'mem_safety_1'), true);
         check('no duplicate members', state.members?.filter((m: any) => m.id === 'mem_safety_1').length === 1, true);
@@ -223,7 +223,7 @@ async function main() {
         Storage.prototype.setItem = original;
       };
       Storage.prototype.setItem = function (key: string, value: string) {
-        if (key === 'golden-nest-state-v2') {
+        if (key === 'golden-nest-state-v3') {
           const err = new Error('The quota has been exceeded.');
           err.name = 'QuotaExceededError';
           throw err;
@@ -285,7 +285,7 @@ async function main() {
     check(
       'the change was saved to the device',
       await page.evaluate(() => {
-        const raw = localStorage.getItem('golden-nest-state-v2');
+        const raw = localStorage.getItem('golden-nest-state-v3');
         if (!raw) return false;
         const state = JSON.parse(raw);
         return (state.provisionExpenses ?? []).some((p: any) => p.amount === 100);
