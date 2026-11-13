@@ -25,9 +25,11 @@ There is no Persuade surface. No marketing language anywhere in the UI.
 5. EB meter bills, owner lease, catering expenses.
 6. Male staff (Cook / Assistant / Helper) with advances and auto net-payable salary.
 7. 14 Wi-Fi connections with passwords, copy button, per-connection expiry and +30-day recharge.
-8. Persistent provision chips saved forever, 3-tap expense entry.
+8. Persistent provision chips saved forever, 3-tap expense entry, with quantity, price per unit
+   and supplier; goods may be bought **on credit** and the supplier is paid later.
 9. P&L dashboard: 5 big-number cards + bar (branch comparison), donut (expense breakdown),
-   line (6-month net profit) charts.
+   line (6-month net profit) charts. A finished month is reported **as of its last day**, and a
+   month the owner has **closed** cannot be changed by accident until it is unlocked.
 10. Two-way `.xlsx` backup/restore (SheetJS), plus reset-to-sample / reset-to-empty.
 All state lives in `localStorage`. Zero server, zero database.
 
@@ -36,6 +38,18 @@ All state lives in `localStorage`. Zero server, zero database.
   `"[Aadhaar Redacted]"`.
 - **Business math is fixed by the owner:** refund = advance − maintenance − unpaid rent;
   net salary = monthly salary − advances; cans settle at month end; tankers pay same day.
+- **Nothing is scheduled.** There is no cron and no stored "paid for October" flag. Every
+  period is derived from today's date, so a new month needs no data entry and no update job.
+- **The app never guesses a debt.** Months before the app kept its first record for a member
+  are unknown, not unpaid. Only months it can see are claimed.
+- **A PG's water bill is a PG's bill.** Settling PG1's can bill never marks PG2 as paid.
+- **A person who has left is not paid forever.** Staff salary stops accruing from the month
+  after they leave; Wi-Fi and EB carry their own next-due dates instead of a fixed 30 days.
+- **A closed month is final.** Nothing can be back-dated into it, voided inside it or edited in
+  it until the owner unlocks it. Closing a month never deletes a record.
+- **Money that had not arrived is not money.** Goods bought on credit and an unpaid electricity
+  bill are liabilities, not cash; a finished month is reported on its last day, so a late payment
+  never rewrites what that month looked like.
 
 ## Assumptions made (from the build brief, flagged for review)
 - Sample members and staff are NOT pre-loaded — the owner confirmed on 12 November 2026 that fresh

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  AlertTriangle,
   BedDouble,
+  Download,
   Droplets,
   HardHat,
   LayoutDashboard,
@@ -16,6 +18,7 @@ import { BRANCHES } from '../store/branches';
 import { defaulters } from '../store/selectors';
 import type { BranchFilter } from '../store/types';
 import { ExcelSyncButtons } from '../../modules/excel-sync';
+import { exportExcel } from '../../modules/excel-sync/export';
 import { Btn } from '../../shared/ui';
 
 export type PageId =
@@ -97,10 +100,19 @@ function BranchSwitcher() {
 }
 
 export function AppShell({ page, setPage, children }: { page: PageId; setPage: (p: PageId) => void; children: React.ReactNode }) {
-  const { state, branch } = useStore();
+  const { state, branch, saveFailed } = useStore();
   const defaulterCount = defaulters(state, branch).length;
   const navRef = useRef<HTMLElement>(null);
   const [moreRight, setMoreRight] = useState(false);
+
+  /** The banner's "Download backup now" button. */
+  const downloadBackupNow = useCallback(async () => {
+    try {
+      await exportExcel(state);
+    } catch {
+      window.alert('Could not create the Excel file. Please try again.');
+    }
+  }, [state]);
 
   /* The phone nav is a horizontal strip: fade the edge that still has items,
      and keep the active page in view when the route changes. */
@@ -126,6 +138,28 @@ export function AppShell({ page, setPage, children }: { page: PageId; setPage: (
 
   return (
     <div className="min-h-screen">
+      {saveFailed ? (
+        <div
+          role="alert"
+          className="sticky top-0 z-50 border-b-2 border-bad bg-bad px-4 py-3 text-base font-semibold text-white"
+        >
+          <div className="mx-auto flex max-w-[1440px] flex-wrap items-center gap-3">
+            <AlertTriangle size={24} aria-hidden className="shrink-0" />
+            <p className="flex-1">
+              Storage Full: New changes cannot be saved. Please download your Excel backup to secure
+              your data.
+            </p>
+            <button
+              type="button"
+              onClick={() => void downloadBackupNow()}
+              className="press min-h-[48px] rounded-xl border border-white/70 bg-white px-4 font-semibold text-bad"
+            >
+              <Download size={20} aria-hidden className="mr-2 inline" />
+              Download backup now
+            </button>
+          </div>
+        </div>
+      ) : null}
       <header className="glass-strong sticky top-0 z-40 border-b border-line">
         <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-4 px-4 pt-3">
           <BrandMark />

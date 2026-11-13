@@ -6,7 +6,19 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit -p tsconfig.json && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:p0": "tsx scripts/test-p0-fixes.ts",
+    "test:p1": "tsx scripts/test-p1-fixes.ts",
+    "test:p2": "tsx scripts/test-p2-fixes.ts",
+    "test:p3": "tsx scripts/test-p3-fixes.ts",
+    "test:p4": "tsx scripts/test-p4-fixes.ts",
+    "test:ops": "tsx scripts/test-ops-fixes.ts",
+    "test:safety": "tsx scripts/test-safety-fixes.ts",
+    "test:rent": "tsx scripts/test-rent-cycle.ts",
+    "test:month": "tsx scripts/test-month-rollover.ts",
+    "test:excel": "tsx scripts/test-excel-roundtrip.ts",
+    "test:audit": "tsx scripts/test-audit.ts",
+    "test:ui": "tsx scripts/ui-smoke.ts"
   },
   "dependencies": {
     "lucide-react": "^0.469.0",
@@ -23,6 +35,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "puppeteer-core": "^25.17.0",
     "tailwindcss": "^4.0.9",
+    "tsx": "^4.23.15",
     "typescript": "~5.6.2",
     "vite": "^6.0.0"
   }

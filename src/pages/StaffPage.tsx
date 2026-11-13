@@ -1,22 +1,32 @@
 import { useState } from 'react';
-import { HandCoins, UserPlus, Wallet } from 'lucide-react';
+import { HandCoins, LogOut, UserPlus, Wallet } from 'lucide-react';
 import { useStore } from '../app/store/StoreProvider';
 import { BRANCHES, BRANCH_MAP } from '../app/store/branches';
+import { monthLockMessage } from '../app/store/monthLock';
+import { staffLedgers } from '../app/store/selectors';
 import type { BranchId, PaymentMode, Staff, StaffRole } from '../app/store/types';
-import { currentMonthKey, longDate, monthLabel } from '../shared/lib/dates';
+import { currentMonthKey, longDate, monthLabel, todayISO } from '../shared/lib/dates';
 import { digitsOnly, isValidMobile, money, uid } from '../shared/lib/format';
-import { Badge, Btn, Card, EmptyState, Field, Modal, MoneyInput, PageIntro, SelectInput, TextInput } from '../shared/ui';
+import { Badge, Btn, Card, EmptyState, Field, Modal, MoneyInput, PageIntro, SelectInput, Tabs, TextInput } from '../shared/ui';
 
 const ROLES: StaffRole[] = ['Cook', 'Assistant', 'Helper / Warden'];
 
 export function StaffPage() {
   const { state, branch } = useStore();
   const key = currentMonthKey();
+  const [tab, setTab] = useState('working');
   const [adding, setAdding] = useState(false);
   const [advancing, setAdvancing] = useState<Staff | null>(null);
   const [paying, setPaying] = useState<Staff | null>(null);
+  const [leaving, setLeaving] = useState<Staff | null>(null);
 
-  const staff = state.staff.filter((s) => branch === 'ALL' || s.branch === branch);
+  const allStaff = state.staff.filter((s) => branch === 'ALL' || s.branch === branch);
+  const staff = allStaff.filter((s) => !s.leftDate);
+  const leftStaff = allStaff.filter((s) => !!s.leftDate);
+  // The payroll for this month — a person who joined or left part-way through
+  // it is paid for the days they actually worked.
+  const ledger = staffLedgers(state, branch, key);
+  const ledgerById = new Map(ledger.map((r) => [r.staff.id, r]));
 
   function advancesFor(id: string) {
     return state.staffAdvances.filter((a) => a.staffId === id && a.date.startsWith(key));
@@ -25,7 +35,7 @@ export function StaffPage() {
     return state.staffPayouts.filter((p) => p.staffId === id && p.date.startsWith(key));
   }
 
-  const totalSalary = staff.reduce((n, s) => n + s.salary, 0);
+  const totalSalary = ledger.reduce((n, r) => n + r.salary, 0);
   const totalAdvances = staff.reduce((n, s) => n + advancesFor(s.id).reduce((x, a) => x + a.amount, 0), 0);
   const totalPaid = staff.reduce((n, s) => n + payoutsFor(s.id).reduce((x, p) => x + p.amount, 0), 0);
 
@@ -51,14 +61,63 @@ export function StaffPage() {
         </Card>
       </div>
 
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-base text-slate-600">Salaries shown for {monthLabel(key)}.</p>
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+        <Tabs
+          ariaLabel="Staff lists"
+          value={tab}
+          onChange={setTab}
+          items={[
+            { id: 'working', label: 'Currently Working', badge: staff.length },
+            { id: 'left', label: 'Left (History)', badge: leftStaff.length },
+          ]}
+        />
         <Btn onClick={() => setAdding(true)}>
           <UserPlus size={22} aria-hidden /> Add Staff Member
         </Btn>
       </div>
 
-      {staff.length === 0 ? (
+      {tab === 'left' ? (
+        leftStaff.length === 0 ? (
+          <EmptyState
+            title="Nobody has left yet"
+            hint="When a staff member leaves, use “Mark as Left” on their card. Their salary then stops being counted in the profit and loss."
+          />
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {leftStaff.map((s) => (
+              <Card key={s.id} className="flex flex-col gap-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-lg font-semibold leading-tight">{s.name}</p>
+                    <p className="text-base text-slate-600">{s.role}</p>
+                  </div>
+                  <Badge tone="neutral">LEFT PG</Badge>
+                </div>
+                <div className="well px-4 py-3">
+                  <div className="flex justify-between gap-3 text-base">
+                    <span className="text-slate-600">Joined on</span>
+                    <span className="num-md">{longDate(s.joinDate ?? '')}</span>
+                  </div>
+                  <div className="flex justify-between gap-3 text-base">
+                    <span className="text-slate-600">Left on</span>
+                    <span className="num-md">{longDate(s.leftDate ?? '')}</span>
+                  </div>
+                  <div className="flex justify-between gap-3 text-base">
+                    <span className="text-slate-600">Monthly salary</span>
+                    <span className="num-md">{money(s.salary)}</span>
+                  </div>
+                </div>
+                <p className="text-base text-slate-600">
+                  Salary for {monthLabel(key)} is not counted, because this person had already left.
+                </p>
+                <Btn variant="secondary" onClick={() => setLeaving(s)}>
+                  <LogOut size={20} aria-hidden /> Change leaving date
+                </Btn>
+              </Card>
+            ))}
+          </div>
+        )
+      ) : staff.length === 0 ? (
         <EmptyState
           title="No staff added yet"
           hint="Add your Cook, Assistant and Helper with their monthly salary — advances and payments will be tracked from then on."
@@ -67,9 +126,15 @@ export function StaffPage() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {staff.map((s) => {
-            const adv = advancesFor(s.id).reduce((n, a) => n + a.amount, 0);
-            const paid = payoutsFor(s.id).reduce((n, p) => n + p.amount, 0);
-            const remaining = Math.max(0, s.salary - adv - paid);
+            const row = ledgerById.get(s.id);
+            const adv = row?.advances ?? 0;
+            const carried = row?.advanceCarried ?? 0;
+            const deducted = row?.advanceDeducted ?? adv;
+            const paid = row?.paid ?? 0;
+            const salary = row?.salary ?? s.salary;
+            const partial = row?.partialMonth ?? false;
+            // The ledger already works the carried-over advance into this month.
+            const remaining = row?.remaining ?? Math.max(0, salary - deducted - paid);
             return (
               <Card key={s.id} className="flex flex-col gap-3">
                 <div className="flex items-start justify-between gap-2">
@@ -92,10 +157,32 @@ export function StaffPage() {
                     <span className="text-slate-600">Monthly base salary</span>
                     <span className="num-md">{money(s.salary)}</span>
                   </div>
+                  {partial ? (
+                    <div className="flex justify-between gap-3 text-base">
+                      <span className="text-slate-600">Salary for this month</span>
+                      <span className="num-md text-brand">{money(salary)}</span>
+                    </div>
+                  ) : null}
+                  <div className="flex justify-between gap-3 text-base">
+                    <span className="text-slate-600">Joined on</span>
+                    <span className="num-md">{longDate(s.joinDate ?? '')}</span>
+                  </div>
                   <div className="flex justify-between gap-3 text-base">
                     <span className="text-slate-600">Advance taken this month</span>
                     <span className="num-md text-warn">{money(adv)}</span>
                   </div>
+                  {carried > 0 ? (
+                    <div className="flex justify-between gap-3 text-base">
+                      <span className="text-slate-600">Advance carried over from earlier</span>
+                      <span className="num-md text-warn">{money(carried)}</span>
+                    </div>
+                  ) : null}
+                  {deducted > 0 ? (
+                    <div className="flex justify-between gap-3 text-base">
+                      <span className="text-slate-600">Advance adjusted against salary</span>
+                      <span className="num-md text-warn">{money(deducted)}</span>
+                    </div>
+                  ) : null}
                   <div className="flex justify-between gap-3 text-base">
                     <span className="text-slate-600">Paid this month</span>
                     <span className="num-md text-good">{money(paid)}</span>
@@ -113,6 +200,9 @@ export function StaffPage() {
                   <Btn disabled={remaining <= 0} onClick={() => setPaying(s)}>
                     <Wallet size={20} aria-hidden />
                     {remaining > 0 ? `Pay Remaining Salary (${money(remaining)})` : 'Salary fully paid'}
+                  </Btn>
+                  <Btn variant="danger" onClick={() => setLeaving(s)}>
+                    <LogOut size={20} aria-hidden /> Mark as Left
                   </Btn>
                 </div>
               </Card>
@@ -173,7 +263,54 @@ export function StaffPage() {
       <AddStaffModal open={adding} onClose={() => setAdding(false)} />
       <AdvanceModal staff={advancing} onClose={() => setAdvancing(null)} />
       <PaySalaryModal staff={paying} onClose={() => setPaying(null)} />
+      <LeaveStaffModal staff={leaving} onClose={() => setLeaving(null)} />
     </div>
+  );
+}
+
+function LeaveStaffModal({ staff, onClose }: { staff: Staff | null; onClose: () => void }) {
+  const { state, update } = useStore();
+  const [leftDate, setLeftDate] = useState(todayISO());
+  const [error, setError] = useState('');
+
+  if (!staff) return null;
+
+  function save() {
+    if (!leftDate) {
+      setError('Please choose the date the person left.');
+      return;
+    }
+    const locked = monthLockMessage(state, leftDate, 'change the leaving date');
+    if (locked) {
+      setError(locked);
+      return;
+    }
+    update((s) => ({
+      ...s,
+      staff: s.staff.map((x) => (x.id === staff!.id ? { ...x, leftDate } : x)),
+    }));
+    window.alert(
+      `${staff!.name} is marked as left from ${longDate(leftDate)}.\nTheir salary is counted up to that month only.`,
+    );
+    onClose();
+  }
+
+  return (
+    <Modal open onClose={onClose} title={`${staff.leftDate ? 'Change leaving date' : 'Mark as Left'} — ${staff.name}`} subtitle={`${staff.role} · ${BRANCH_MAP[staff.branch].short}`}>
+      <div className="space-y-4">
+        <Field label="Date the person left" error={error}>
+          <TextInput type="date" value={leftDate} onChange={(e) => setLeftDate(e.target.value)} />
+        </Field>
+        <div className="rounded-xl bg-brand-soft px-4 py-3 text-base font-semibold text-brand-dark">
+          After this date the salary is no longer counted in the profit and loss. Salary is still
+          counted for the month the person left in.
+        </div>
+        <div className="flex flex-col gap-3 sm:flex-row-reverse">
+          <Btn full className="sm:flex-1" onClick={save}>Save</Btn>
+          <Btn variant="secondary" full onClick={onClose}>Cancel</Btn>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -184,6 +321,7 @@ function AddStaffModal({ open, onClose }: { open: boolean; onClose: () => void }
   const [mobile, setMobile] = useState('');
   const [staffBranch, setStaffBranch] = useState<BranchId>('PG1');
   const [salary, setSalary] = useState('12000');
+  const [joinDate, setJoinDate] = useState(todayISO());
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   function save() {
@@ -197,7 +335,15 @@ function AddStaffModal({ open, onClose }: { open: boolean; onClose: () => void }
       ...s,
       staff: [
         ...s.staff,
-        { id: uid('stf'), name: name.trim(), role, mobile: digitsOnly(mobile), branch: staffBranch, salary: Number(salary) },
+        {
+          id: uid('stf'),
+          name: name.trim(),
+          role,
+          mobile: digitsOnly(mobile),
+          branch: staffBranch,
+          salary: Number(salary),
+          joinDate,
+        },
       ],
     }));
     window.alert(`${name.trim()} added as ${role} at ${BRANCH_MAP[staffBranch].short}.`);
@@ -229,6 +375,9 @@ function AddStaffModal({ open, onClose }: { open: boolean; onClose: () => void }
           <Field label="Fixed monthly salary (₹)" error={errors.salary}>
             <MoneyInput value={salary} onChange={(e) => setSalary(e.target.value)} />
           </Field>
+          <Field label="Date the person joined">
+            <TextInput type="date" value={joinDate} onChange={(e) => setJoinDate(e.target.value)} />
+          </Field>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row-reverse">
           <Btn full className="sm:flex-1" onClick={save}>Save Staff Member</Btn>
@@ -240,7 +389,7 @@ function AddStaffModal({ open, onClose }: { open: boolean; onClose: () => void }
 }
 
 function AdvanceModal({ staff, onClose }: { staff: Staff | null; onClose: () => void }) {
-  const { update } = useStore();
+  const { state, update } = useStore();
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState(currentMonthKey() + '-' + String(new Date().getDate()).padStart(2, '0'));
   const [mode, setMode] = useState<'Cash' | 'UPI'>('Cash');
@@ -252,6 +401,11 @@ function AdvanceModal({ staff, onClose }: { staff: Staff | null; onClose: () => 
     const a = Number(amount);
     if (!a || a <= 0) {
       setError('Please enter the advance amount.');
+      return;
+    }
+    const locked = monthLockMessage(state, date, 'give this advance');
+    if (locked) {
+      setError(locked);
       return;
     }
     update((s) => ({
@@ -309,6 +463,11 @@ function PaySalaryModal({ staff, onClose }: { staff: Staff | null; onClose: () =
     const a = Number(value);
     if (!a || a <= 0) {
       window.alert('Nothing is pending — this staff member’s salary is already fully paid.');
+      return;
+    }
+    const locked = monthLockMessage(state, date, 'pay this salary');
+    if (locked) {
+      window.alert(locked);
       return;
     }
     update((s) => ({

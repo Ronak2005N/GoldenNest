@@ -77,6 +77,29 @@ export function currentMonthKey(): string {
   return monthKey(todayISO());
 }
 
+/** First day of the month: "2026-11" → "2026-11-01". */
+export function monthStartISO(key: string): string {
+  return `${key}-01`;
+}
+
+/** Last day of the month: "2026-11" → "2026-11-30". */
+export function monthEndISO(key: string): string {
+  const [y, m] = key.split('-').map(Number);
+  // Day 0 of the next month is the last day of this month.
+  return toISO(new Date(y, m, 0));
+}
+
+/** How close a due date is. Used for Wi-Fi recharges and EB bills. */
+export type DueStatus = 'overdue' | 'soon' | 'ok';
+
+export function dueStatus(dueDate: string, today = todayISO(), soonDays = 5): DueStatus {
+  if (!dueDate) return 'overdue';
+  const days = daysBetween(today, dueDate);
+  if (days < 0) return 'overdue';
+  if (days <= soonDays) return 'soon';
+  return 'ok';
+}
+
 /** Last `count` month keys ending at `endKey` (oldest first). */
 export function lastMonths(endKey: string, count: number): string[] {
   const [y, m] = endKey.split('-').map(Number);

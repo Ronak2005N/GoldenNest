@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Member, PaymentMode } from '../../../app/store/types';
 import { useStore } from '../../../app/store/StoreProvider';
 import { BRANCH_MAP } from '../../../app/store/branches';
+import { monthLockMessage } from '../../../app/store/monthLock';
 import { netRefund, rentPosition } from '../../../entities/member';
 import { todayISO } from '../../../shared/lib/dates';
 import { money, uid } from '../../../shared/lib/format';
@@ -20,7 +21,7 @@ export function VacateModal({
   open: boolean;
   onClose: () => void;
 }) {
-  const { update } = useStore();
+  const { state, update } = useStore();
   const [step, setStep] = useState(1);
   const [maintenance, setMaintenance] = useState('0');
   const [pendingText, setPendingText] = useState('');
@@ -30,10 +31,13 @@ export function VacateModal({
   if (!member) return null;
 
   const pos = rentPosition(member);
-  const pendingDefault = pos.balance;
+  // Money the member paid beyond the rent due — it goes back to him.
+  const rentCredit = pos.credit + pos.prepaid;
+  const pendingDefault = pos.totalDue;
   const pending = pendingText === '' ? pendingDefault : Number(pendingText || 0);
   const maint = Number(maintenance || 0);
-  const refund = netRefund(member.advance.amount, maint, pending);
+  const held = member.advance.amount + rentCredit;
+  const refund = netRefund(held, maint, pending);
 
   function reset() {
     setStep(1);
@@ -46,6 +50,12 @@ export function VacateModal({
   function confirm() {
     if (!member) return;
     const exit = exitDate;
+    // A closed month is final — a member cannot be moved out of it.
+    const locked = monthLockMessage(state, exit, 'record this departure');
+    if (locked) {
+      window.alert(locked);
+      return;
+    }
     update((s) => {
       const members = s.members.map((m) =>
         m.id === member.id
@@ -57,6 +67,7 @@ export function VacateModal({
                 exitDate: exit,
                 maintenanceDeduction: maint,
                 pendingRentDeduction: pending,
+                rentCreditRefund: rentCredit,
                 refund,
                 refundMode,
                 recordedOn: todayISO(),
@@ -84,6 +95,7 @@ export function VacateModal({
       `${member.name} has been marked as Left PG on ${exit}.\n\n` +
         `Bed ${member.bedIndex} in Room ${member.roomCode} (${BRANCH_MAP[member.branch].short}) is now FREE.\n\n` +
         `Advance paid: ${money(member.advance.amount)}\n` +
+        `Extra rent paid (returned): ${money(rentCredit)}\n` +
         `Maintenance cut: ${money(maint)}\n` +
         `Pending rent cut: ${money(pending)}\n` +
         `Refund returned by ${refundMode}: ${money(refund)}`,
@@ -119,7 +131,8 @@ export function VacateModal({
               <div className="mt-3">
                 <InfoRow label="Paid on" value={member.advance.date || '—'} />
                 <InfoRow label="Payment mode" value={member.advance.mode} />
-                <InfoRow label="Current rent balance" value={money(pos.balance)} />
+                <InfoRow label="Current rent balance" value={money(pos.totalDue)} />
+                <InfoRow label="Extra rent paid — to be returned" value={money(rentCredit)} />
                 <InfoRow label="Stay started" value={member.startDate} />
               </div>
             </div>
@@ -151,9 +164,12 @@ export function VacateModal({
               />
             </Field>
             <div className="rounded-2xl border border-brand/35 bg-brand-soft/75 p-4 shadow-[inset_0_1px_2px_rgb(15_23_42/0.05)]">
-              <p className="text-base font-semibold text-brand-dark">Net advance to return to member</p>
+              <p className="text-base font-semibold text-brand-dark">Net money to return to member</p>
               <p className="num-xl mt-1 text-good">
-                {money(member.advance.amount)} − {money(maint)} − {money(pending)} = {money(refund)}
+                {money(held)} − {money(maint)} − {money(pending)} = {money(refund)}
+              </p>
+              <p className="mt-1 text-base text-slate-700">
+                {money(member.advance.amount)} advance + {money(rentCredit)} extra rent paid
               </p>
               {refund <= 0 ? (
                 <p className="mt-2 text-base font-semibold text-bad">
@@ -177,6 +193,7 @@ export function VacateModal({
           <>
             <div className="well p-4">
               <InfoRow label="Advance paid" value={money(member.advance.amount)} />
+              <InfoRow label="Extra rent paid (returned)" value={money(rentCredit)} />
               <InfoRow label="Maintenance deduction (kept by PG)" value={money(maint)} />
               <InfoRow label="Pending rent deduction" value={money(pending)} />
               <InfoRow label="Refund to return" value={money(refund)} />

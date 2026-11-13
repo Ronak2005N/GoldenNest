@@ -3,15 +3,19 @@ import { MessageCircle } from 'lucide-react';
 import type { Member, RentPayment } from '../../../app/store/types';
 import { useStore } from '../../../app/store/StoreProvider';
 import { BRANCH_MAP } from '../../../app/store/branches';
-import { rentPosition } from '../../../entities/member';
-import { longDate, todayISO } from '../../../shared/lib/dates';
+import { monthLockMessage } from '../../../app/store/monthLock';
+import { payableCycles, rentPosition } from '../../../entities/member';
+import { longDate, monthKey, todayISO } from '../../../shared/lib/dates';
 import { money, splitLine, uid } from '../../../shared/lib/format';
 import { openWhatsApp, paymentReceiptMessage } from '../../../shared/lib/whatsapp';
-import { Badge, Btn, Field, InfoRow, Modal, MoneyInput, SectionTitle, TextInput } from '../../../shared/ui';
+import { Badge, Btn, Field, InfoRow, Modal, MoneyInput, SectionTitle, SelectInput, TextInput } from '../../../shared/ui';
 
 /**
  * Record a full, partial or split (Cash + UPI + Card) rent payment,
  * then show a clear receipt the owner can send on WhatsApp.
+ *
+ * The owner chooses which month the money is for: the month running now, the
+ * next month (paid in advance) or an older month that is still open.
  */
 export function RecordPaymentModal({
   member,
@@ -24,36 +28,62 @@ export function RecordPaymentModal({
   onClose: () => void;
   onRecorded?: () => void;
 }) {
-  const { update } = useStore();
+  const { state, update } = useStore();
   const [cash, setCash] = useState('');
   const [upi, setUpi] = useState('');
   const [card, setCard] = useState('');
   const [date, setDate] = useState(todayISO());
+  const [cycleKey, setCycleKey] = useState('');
   const [error, setError] = useState('');
-  const [receipt, setReceipt] = useState<{ cash: number; upi: number; card: number; balance: number } | null>(null);
+  const [receipt, setReceipt] = useState<{
+    cash: number;
+    upi: number;
+    card: number;
+    balance: number;
+    cycleLabel: string;
+    cycleStart: string;
+  } | null>(null);
 
+  const cycles = useMemo(() => (member ? payableCycles(member) : []), [member]);
   const pos = useMemo(() => (member ? rentPosition(member) : null), [member]);
 
   if (!member || !pos) return null;
+
+  // Kept in a local so the receipt button can use it inside a callback.
+  const who = member;
+
+  // Falls back to the month running now whenever the picked month is not open.
+  const current = cycles.find((c) => c.kind === 'current') ?? cycles[cycles.length - 1];
+  const target = cycles.find((c) => c.cycleKey === cycleKey) ?? current;
+  const isNext = target.kind === 'next';
+  const isOlder = target.kind === 'older';
+
+  // A closed month is final: money cannot be booked into it, and an old month
+  // that has been closed cannot be settled either.
+  const lockedByDate = monthLockMessage(state, date, 'record a payment');
+  const lockedByCycle =
+    target.kind === 'older' && target.cycleKey !== 'daily'
+      ? monthLockMessage(state, `${monthKey(target.cycleKey)}-01`, 'settle that closed month')
+      : null;
+  const locked = lockedByDate ?? lockedByCycle;
 
   function reset() {
     setCash('');
     setUpi('');
     setCard('');
     setDate(todayISO());
+    setCycleKey('');
     setError('');
     setReceipt(null);
   }
 
   function fillBalance(source: 'Cash' | 'UPI') {
-    if (!pos) return;
-    const remaining = Math.max(0, pos.balance - (Number(cash || 0) + Number(upi || 0) + Number(card || 0)));
+    const remaining = Math.max(0, target.gap - (Number(cash || 0) + Number(upi || 0) + Number(card || 0)));
     if (source === 'Cash') setCash(String(Number(cash || 0) + remaining));
     else setUpi(String(Number(upi || 0) + remaining));
   }
 
   function save() {
-    if (!member || !pos) return;
     const c = Number(cash || 0);
     const u = Number(upi || 0);
     const d = Number(card || 0);
@@ -62,20 +92,30 @@ export function RecordPaymentModal({
       setError('Enter at least some money in Cash, UPI or Card.');
       return;
     }
+    if (locked) {
+      setError(locked);
+      return;
+    }
     const payment: RentPayment = {
       id: uid('pay'),
       date,
-      cycleKey: pos.cycleKey,
+      cycleKey: target.cycleKey,
       cash: c,
       upi: u,
       card: d,
     };
     update((s) => ({
       ...s,
-      members: s.members.map((m) => (m.id === member.id ? { ...m, payments: [...m.payments, payment] } : m)),
+      members: s.members.map((m) => (m.id === who.id ? { ...m, payments: [...m.payments, payment] } : m)),
     }));
-    const newBalance = Math.max(0, pos.balance - total);
-    setReceipt({ cash: c, upi: u, card: d, balance: newBalance });
+    setReceipt({
+      cash: c,
+      upi: u,
+      card: d,
+      balance: Math.max(0, target.gap - total),
+      cycleLabel: target.label,
+      cycleStart: target.cycleStart,
+    });
     onRecorded?.();
   }
 
@@ -96,12 +136,12 @@ export function RecordPaymentModal({
               <InfoRow label="Paid in Card" value={money(receipt.card)} />
               <InfoRow label="Total Received" value={money(total)} />
               <InfoRow
-                label="Balance Still Due"
+                label="Balance Still Due for this Month"
                 value={receipt.balance > 0 ? money(receipt.balance) : 'None — paid in full'}
               />
             </div>
             <p className="mt-3 text-base text-slate-700">
-              Received on {longDate(date)} for the cycle starting {longDate(pos.cycleStart)}.
+              Received on {longDate(date)} for the month {receipt.cycleLabel}.
             </p>
           </div>
           <Btn
@@ -109,11 +149,11 @@ export function RecordPaymentModal({
             variant="success"
             onClick={() =>
               openWhatsApp(
-                member.mobile,
+                who.mobile,
                 paymentReceiptMessage({
-                  name: member.name,
-                  branchLabel: BRANCH_MAP[member.branch].short,
-                  room: member.roomCode,
+                  name: who.name,
+                  branchLabel: BRANCH_MAP[who.branch].short,
+                  room: who.roomCode,
                   cash: receipt.cash,
                   upi: receipt.upi,
                   card: receipt.card,
@@ -142,18 +182,84 @@ export function RecordPaymentModal({
       subtitle={`${member.name} · ${BRANCH_MAP[member.branch].short} · Room ${member.roomCode}`}
     >
       <div className="space-y-4">
+        {cycles.length > 1 ? (
+          <Field label="Which month is this money for?">
+            <SelectInput value={target.cycleKey} onChange={(e) => setCycleKey(e.target.value)}>
+              {cycles.map((c) => (
+                <option key={c.cycleKey} value={c.cycleKey}>
+                  {c.kind === 'older'
+                    ? 'Still open from earlier — '
+                    : c.kind === 'next'
+                      ? 'Next month (paid in advance) — '
+                      : 'This month — '}
+                  {c.label} · {c.gap > 0 ? `${money(c.gap)} due` : 'already paid'}
+                </option>
+              ))}
+            </SelectInput>
+          </Field>
+        ) : null}
+
         <div className="well p-4">
-          <InfoRow label="Rent for this cycle" value={money(pos.due)} />
-          <InfoRow label="Paid so far" value={money(pos.paid)} />
-          <InfoRow label="Balance due" value={money(pos.balance)} />
-          <p className="mt-2 text-base text-slate-600">{pos.label}</p>
+          <InfoRow label="Rent for this month" value={money(target.due)} />
+          <InfoRow label="Paid so far" value={money(target.paid)} />
+          <InfoRow label="Balance due" value={money(target.gap)} />
+          <p className="mt-2 text-base text-slate-600">{target.label}</p>
         </div>
 
-        {pos.balance <= 0 ? (
+        {isNext ? (
+          <div className="rounded-2xl border border-info/30 bg-info/[0.07] p-4">
+            <Badge tone="info">Paid in advance</Badge>
+            <p className="mt-2 text-base text-slate-700">
+              This money is kept for the next month. It is shown as already paid for that month and
+              will not be shown as arrears now.
+            </p>
+          </div>
+        ) : null}
+
+        {isOlder ? (
+          <div className="rounded-2xl border border-warn/30 bg-warn/[0.07] p-4">
+            <Badge tone="warn">Older month still open</Badge>
+            <p className="mt-2 text-base text-slate-700">
+              This month was left unpaid earlier. Recording the money here clears that old
+              balance.
+            </p>
+          </div>
+        ) : null}
+
+        {target.gap <= 0 ? (
           <div className="rounded-2xl border border-good/25 bg-good/[0.07] p-4">
             <Badge tone="good">Paid in full</Badge>
             <p className="mt-2 text-base text-slate-700">
-              This cycle is already settled. You can still record an extra payment if needed.
+              This month is already settled. You can still record an extra payment if needed — it
+              will reduce next month&apos;s bill.
+            </p>
+          </div>
+        ) : null}
+
+        {pos.olderDue > 0 ? (
+          <div className="rounded-2xl border border-bad/25 bg-bad/[0.06] p-4">
+            <p className="text-base font-semibold text-bad">
+              Older rent of {money(pos.olderDue)} is still unpaid.
+            </p>
+            <p className="mt-1 text-base text-slate-700">
+              Pick the earlier month below to clear it, or send a WhatsApp reminder.
+            </p>
+          </div>
+        ) : null}
+
+        {pos.credit > 0 ? (
+          <div className="rounded-2xl border border-good/25 bg-good/[0.07] p-4">
+            <p className="text-base font-semibold text-good">
+              {money(pos.credit)} extra was paid earlier — it will reduce next month&apos;s bill
+              automatically.
+            </p>
+          </div>
+        ) : null}
+
+        {pos.prepaid > 0 ? (
+          <div className="rounded-2xl border border-info/25 bg-info/[0.07] p-4">
+            <p className="text-base font-semibold text-info">
+              {money(pos.prepaid)} is already paid for a month that has not started yet.
             </p>
           </div>
         ) : null}
@@ -189,8 +295,8 @@ export function RecordPaymentModal({
         <div className="well px-4 py-3">
           <p className="text-base font-semibold">
             Total now entered: {money(Number(cash || 0) + Number(upi || 0) + Number(card || 0))} · New balance:{' '}
-            <span className={pos.balance - (Number(cash || 0) + Number(upi || 0) + Number(card || 0)) > 0 ? 'text-bad' : 'text-good'}>
-              {money(Math.max(0, pos.balance - (Number(cash || 0) + Number(upi || 0) + Number(card || 0))))}
+            <span className={target.gap - (Number(cash || 0) + Number(upi || 0) + Number(card || 0)) > 0 ? 'text-bad' : 'text-good'}>
+              {money(Math.max(0, target.gap - (Number(cash || 0) + Number(upi || 0) + Number(card || 0))))}
             </span>
           </p>
           <p className="mt-1 text-base text-slate-600">{splitLine({ cash: Number(cash || 0), upi: Number(upi || 0), card: Number(card || 0) })}</p>
@@ -198,7 +304,13 @@ export function RecordPaymentModal({
 
         {error ? <p className="font-semibold text-bad">{error}</p> : null}
 
-        <Btn full onClick={save}>
+        {locked ? (
+          <div className="rounded-2xl border border-bad/35 bg-bad/[0.07] p-4">
+            <p className="text-base font-semibold text-bad">{locked}</p>
+          </div>
+        ) : null}
+
+        <Btn full onClick={save} disabled={!!locked}>
           Save Payment &amp; Show Receipt
         </Btn>
       </div>

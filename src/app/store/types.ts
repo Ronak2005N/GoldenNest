@@ -41,6 +41,16 @@ export interface RentPayment {
   upi: number;
   card: number;
   note?: string;
+  /**
+   * Set when the owner reverses this payment.
+   *
+   * A voided payment is never deleted — it stays in the record as proof of
+   * the correction, but it counts for nothing: not towards the rent paid,
+   * not towards the balance due, and not towards the month's revenue.
+   */
+  voidedAt?: string;
+  /** Why the payment was reversed. */
+  voidReason?: string;
 }
 
 export interface AdvanceRecord {
@@ -56,9 +66,25 @@ export interface VacateSettlement {
   exitDate: string;
   maintenanceDeduction: number;
   pendingRentDeduction: number;
+  /** Rent money received that was more than the rent due — returned to the member. */
+  rentCreditRefund?: number;
   refund: number;
   refundMode: PaymentMode;
   recordedOn: string;
+}
+
+/**
+ * One rent rate and the day it started applying.
+ *
+ * A member's rent can change during the stay. Every cycle is priced with the
+ * rate that was in force when that cycle started, so raising the rent in
+ * November never re-prices a month that was already paid.
+ */
+export interface RentRateChange {
+  /** The day this rate starts applying (yyyy-mm-dd). */
+  fromDate: string;
+  /** Monthly rent in rupees from this date. */
+  amount: number;
 }
 
 export interface Member {
@@ -75,7 +101,13 @@ export interface Member {
   billingType: 'monthly' | 'daily';
   startDate: string;
   endDate?: string; // daily stays only
-  monthlyRent?: number; // monthly billing
+  monthlyRent?: number; // monthly billing — the rate in force today
+  /**
+   * Every rent rate this member has been charged, oldest first.
+   * Empty for members saved before rent history existed: for them the single
+   * `monthlyRent` field is the rate for every cycle, exactly as before.
+   */
+  rentHistory?: RentRateChange[];
   dailyRate?: number; // daily billing (default ₹500)
   advance: AdvanceRecord;
   payments: RentPayment[];
@@ -103,6 +135,8 @@ export interface WaterCanLog {
 export interface CanSettlement {
   id: string;
   monthKey: string; // yyyy-mm
+  /** Which PG the can bill was for. Empty means it covers every PG (older records). */
+  branch?: BranchId;
   date: string;
   cash: number;
   upi: number;
@@ -123,6 +157,10 @@ export interface EbMeter {
   branch: BranchId;
   label: string;
   consumerNo: string;
+  /** How many months one EB bill covers (usually 2). */
+  cycleMonths?: number;
+  /** Date the next bill is expected. */
+  dueDate?: string;
 }
 
 export interface EbBill {
@@ -130,9 +168,21 @@ export interface EbBill {
   meterId: string;
   branch: BranchId;
   cycle: string; // e.g. "Oct–Nov"
+  /** The amount the electricity board billed. */
   amount: number;
+  /** The day the bill was paid. Empty while the bill is still unpaid. */
   paidDate: string;
-  mode: PaymentMode;
+  /** How the bill was paid. Empty while the bill is unpaid. */
+  mode?: PaymentMode;
+  /**
+   * 'paid' | 'unpaid' | 'partial'.
+   * Bills saved before this field existed count as paid.
+   */
+  status?: 'paid' | 'unpaid' | 'partial';
+  /** How much of a part-paid bill has been paid so far. */
+  paidAmount?: number;
+  /** The month the power was used (yyyy-mm) — the period the bill is for. */
+  serviceMonth?: string;
 }
 
 export interface LeasePayment {
@@ -161,6 +211,10 @@ export interface Staff {
   mobile: string;
   branch: BranchId;
   salary: number;
+  /** Date the person started working. */
+  joinDate?: string;
+  /** Date the person left. Once set, the salary stops accruing after this month. */
+  leftDate?: string;
 }
 
 export interface StaffAdvance {
@@ -187,6 +241,14 @@ export interface Wifi {
   password: string;
   monthlyAmount: number;
   expiryDate: string;
+  /** How many days one recharge buys. Default 30. */
+  validityDays?: number;
+  /**
+   * What each plan length costs for this connection (days → price).
+   * A 365-day plan is not ₹899 — the owner enters the real price once and
+   * every later recharge of that plan is pre-filled with it.
+   */
+  planPrices?: { days: number; amount: number }[];
 }
 
 export interface WifiRecharge {
@@ -204,6 +266,58 @@ export interface ProvisionExpense {
   item: string;
   amount: number;
   mode: PaymentMode;
+  /**
+   * How many units were bought. Optional — older records have only an amount.
+   */
+  quantity?: number;
+  /**
+   * The price of one unit (₹). Optional — older records have only an amount.
+   */
+  unitPrice?: number;
+  /**
+   * Who the goods were bought from. Optional — older records have no supplier.
+   */
+  supplier?: string;
+  /**
+   * 'paid' = the money left the bank when the goods were bought.
+   * 'credit' = the goods were bought on credit; nothing has been paid yet, so
+   * the cost does not touch this month's cash and stays a liability until it
+   * is settled. Records saved before this field existed count as paid.
+   */
+  status?: 'paid' | 'credit';
+}
+
+/**
+ * Money paid to a supplier to clear goods that were bought on credit.
+ *
+ * The purchase itself is not an expense when it is on credit — the money only
+ * leaves the bank when the supplier is paid, and that payment is what the
+ * profit and loss shows, exactly like the water can vendor.
+ */
+export interface ProvisionSettlement {
+  id: string;
+  /** The day the money was paid to the supplier. */
+  date: string;
+  branch: BranchFilter;
+  /** The supplier whose credit balance this payment clears. */
+  supplier: string;
+  cash: number;
+  upi: number;
+  card: number;
+}
+
+/**
+ * A month the owner has closed — the books for that month are final.
+ *
+ * A closed month cannot be changed by accident: no back-dated payment, no
+ * void, no expense edit. The owner has to unlock it first, and only if they
+ * really mean to correct the past.
+ */
+export interface ClosedMonth {
+  /** The month that is closed (yyyy-mm). */
+  monthKey: string;
+  /** The day it was closed. */
+  closedAt: string;
 }
 
 export interface AppState {
@@ -226,9 +340,13 @@ export interface AppState {
   wifiRecharges: WifiRecharge[];
   provisionChips: string[];
   provisionExpenses: ProvisionExpense[];
+  /** Payments made to suppliers to clear goods bought on credit. */
+  provisionSettlements: ProvisionSettlement[];
+  /** Months the owner has closed — their books are final. */
+  closedMonths: ClosedMonth[];
 }
 
-export const APP_STATE_VERSION = 1;
+export const APP_STATE_VERSION = 3;
 
 export type ExpenseCategory =
   | 'Owner Lease'

@@ -1,4 +1,5 @@
 import type { BranchId, Floor, Member, Occupation, PaymentModeOrSplit } from '../../app/store/types';
+import { withRentChange } from '../../entities/member/rent';
 import { MEMBER_COLUMNS, IMPORT_COLUMN_ORDER, matchHeader } from './columns';
 import type { MemberColumn } from './columns';
 
@@ -408,7 +409,7 @@ export function draftsToMembers(
 
     if (existingMember) {
       const changes: string[] = [];
-      const next: Member = { ...existingMember };
+      let next: Member = { ...existingMember };
       if (existingMember.name !== d.name) {
         changes.push(`name “${existingMember.name}” → “${d.name}”`);
         next.name = d.name;
@@ -421,7 +422,10 @@ export function draftsToMembers(
       }
       if (d.monthlyRent !== null && existingMember.monthlyRent !== d.monthlyRent) {
         changes.push(`rent ${existingMember.monthlyRent ?? 0} → ${d.monthlyRent}`);
-        next.monthlyRent = d.monthlyRent;
+        // The new rate is added to the member's rent history from today — the
+        // months already paid keep the rent they were charged at.
+        const effective = d.startDate && d.startDate > today ? d.startDate : today;
+        next = withRentChange(next, effective, d.monthlyRent);
       }
       if (d.advance !== null && existingMember.advance.amount !== d.advance) {
         changes.push(`advance ${existingMember.advance.amount} → ${d.advance}`);
@@ -468,6 +472,10 @@ export function draftsToMembers(
       billingType: 'monthly',
       startDate: d.startDate || today,
       monthlyRent: d.monthlyRent ?? room?.monthlyRent ?? 0,
+      // A brand new member has one rate for the whole stay.
+      rentHistory: [
+        { fromDate: d.startDate || today, amount: d.monthlyRent ?? room?.monthlyRent ?? 0 },
+      ],
       advance: {
         amount: plan.amount,
         mode: plan.mode,

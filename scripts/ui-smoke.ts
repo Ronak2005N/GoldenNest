@@ -232,7 +232,7 @@ async function main() {
     check('vacate step 1', await waitForText(page, 'Step 1 of 3'));
     await clickByText(page, 'button', 'Next: Cut Deductions');
     check('vacate step 2', await waitForText(page, 'Step 2 of 3'));
-    check('net refund auto-calculated', await hasText(page, 'Net advance to return'));
+    check('net refund auto-calculated', await hasText(page, 'to return to member'));
     await clickByText(page, 'button', 'Next: Return Refund');
     check('vacate step 3', await waitForText(page, 'Step 3 of 3'));
     check('refund mode selector', await hasText(page, 'How will you return the refund?'));
@@ -257,7 +257,7 @@ async function main() {
     await page.close();
   }
 
-  // ---------- 6. wifi: +30 day recharge updates expiry & logs expense ----------
+  // ---------- 6. wifi: recharge with an explicit plan length and amount --------
   {
     const page = await fresh(browser, 'wifi');
     check('expired wifi highlighted', await hasText(page, 'EXPIRED / DUE TODAY'));
@@ -268,9 +268,15 @@ async function main() {
       dialogLog(page).some((m) => m.includes('New expiry date')),
       8000,
     );
-    await clickByText(page, 'button', 'Recharge Done (+30 Days)');
+    // The recharge is confirmed in the modal now — the plan length and the
+    // amount are chosen by the owner, never assumed.
+    await clickByText(page, 'button', 'Recharge Done');
+    check('the recharge modal opens', await waitForText(page, 'How long is this recharge for?'));
+    check('the plan length can be chosen', await hasText(page, '365 days'));
+    check('the amount can be entered', await hasText(page, 'Amount paid'));
+    await clickByText(page, 'button', 'Save Recharge');
     check('recharge confirm alert', await alertSeen, dialogLog(page).join(' | '));
-    await sleep(300);
+    await sleep(400);
     const afterCount = await page.evaluate(
       () => (document.body.innerText.match(/EXPIRED \/ DUE TODAY/g) || []).length,
     );
@@ -302,16 +308,35 @@ async function main() {
         check('file input present for import', false);
       } else {
         await input.uploadFile(path.join(downloadDir, file));
-        // confirm dialog auto-accepted; assert the summary alert text from the dialog log
+        // The import now shows a preview before it changes anything.
+        const previewShown = await waitFor(
+          () => hasText(page, 'Check Before Importing'),
+          10000,
+        );
+        check('import preview shown before anything is saved', previewShown);
+        check(
+          'the preview says nothing is deleted',
+          await hasText(page, 'will be deleted'),
+        );
+        check(
+          'the preview promises zero deletions',
+          await hasText(page, '0 will be deleted'),
+        );
+        await clickByText(page, 'button', 'Confirm Import');
         const imported = await waitFor(() =>
-          dialogLog(page).some((m) => m.includes('Sync complete')),
+          dialogLog(page).some((m) => m.includes('Import complete')),
           10000,
         );
         check('import finished with summary alert', imported, dialogLog(page).join(' | '));
         await sleep(300);
         check(
           'import summary names the loaded counts',
-          dialogLog(page).some((m) => m.includes('Sync complete') && m.includes('Loaded 0 members')),
+          dialogLog(page).some((m) => m.includes('Import complete') && m.includes('0 members')),
+          dialogLog(page).join(' | '),
+        );
+        check(
+          'import summary says nothing was deleted',
+          dialogLog(page).some((m) => m.includes('0 deleted')),
           dialogLog(page).join(' | '),
         );
       }

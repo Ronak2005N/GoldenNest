@@ -413,6 +413,11 @@ export function AddMemberModal({
       startDate,
       endDate: billingType === 'daily' ? endDate : undefined,
       monthlyRent: billingType === 'monthly' ? Number(monthlyRent) : undefined,
+      // One rate for the whole stay — later changes are appended to this list.
+      rentHistory:
+        billingType === 'monthly'
+          ? [{ fromDate: startDate, amount: Number(monthlyRent) }]
+          : undefined,
       dailyRate: billingType === 'daily' ? Number(dailyRate) : undefined,
       advance: { amount: advanceAmt, mode: advanceMode, ...split, date: advanceDate },
       payments: [],

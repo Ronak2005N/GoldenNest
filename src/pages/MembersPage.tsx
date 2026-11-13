@@ -1,16 +1,16 @@
 import { useMemo, useState } from 'react';
-import { Download, MessageCircle, Phone, UserPlus, Users, Wallet } from 'lucide-react';
+import { Download, MessageCircle, Pencil, Phone, Receipt, TrendingUp, UserPlus, Users, Wallet } from 'lucide-react';
 import { useStore } from '../app/store/StoreProvider';
 import { BRANCH_MAP } from '../app/store/branches';
 import { activeMembers, vacatedMembers } from '../app/store/selectors';
 import type { Member } from '../app/store/types';
-import { rentPosition } from '../entities/member';
-import { AddMemberModal, RecordPaymentModal, VacateModal } from '../modules/members';
+import { currentRentRate, rentPosition, rentStatusText, withRentChange } from '../entities/member';
+import { AddMemberModal, EditMemberModal, PaymentHistoryModal, RecordPaymentModal, VacateModal } from '../modules/members';
 import { BulkMembersModal, downloadMembersList } from '../modules/members-bulk';
-import { longDate } from '../shared/lib/dates';
+import { longDate, todayISO } from '../shared/lib/dates';
 import { money } from '../shared/lib/format';
 import { openWhatsApp, rentReminderMessage } from '../shared/lib/whatsapp';
-import { Badge, Btn, Card, EmptyState, PageIntro, Tabs, TextInput } from '../shared/ui';
+import { Badge, Btn, Card, EmptyState, Field, Modal, MoneyInput, PageIntro, Tabs, TextInput } from '../shared/ui';
 
 export function MembersPage() {
   const { state, branch } = useStore();
@@ -20,6 +20,9 @@ export function MembersPage() {
   const [bulkOpen, setBulkOpen] = useState(false);
   const [paying, setPaying] = useState<Member | null>(null);
   const [vacating, setVacating] = useState<Member | null>(null);
+  const [changingRent, setChangingRent] = useState<Member | null>(null);
+  const [editing, setEditing] = useState<Member | null>(null);
+  const [history, setHistory] = useState<Member | null>(null);
 
   const q = query.trim().toLowerCase();
   const filter = (m: Member) =>
@@ -101,7 +104,7 @@ export function MembersPage() {
                     <Badge
                       tone={pos.status === 'paid' ? 'good' : pos.status === 'partial' ? 'warn' : 'bad'}
                     >
-                      {pos.status === 'paid' ? 'Paid in Full' : pos.status === 'partial' ? 'Part Paid' : 'Unpaid'}
+                      {pos.status === 'paid' ? 'Paid in Full' : rentStatusText(pos)}
                     </Badge>
                   </div>
 
@@ -123,6 +126,21 @@ export function MembersPage() {
                         Balance {money(pos.balance)}
                       </span>
                     </p>
+                    {pos.olderDue > 0 ? (
+                      <p className="mt-1 text-base font-semibold text-bad">
+                        Older months unpaid: {money(pos.olderDue)} · Total due {money(pos.totalDue)}
+                      </p>
+                    ) : null}
+                    {pos.credit > 0 ? (
+                      <p className="mt-1 text-base text-good">
+                        {money(pos.credit)} extra paid — it will cut next month&apos;s bill
+                      </p>
+                    ) : null}
+                    {pos.prepaid > 0 ? (
+                      <p className="mt-1 text-base text-info">
+                        {money(pos.prepaid)} already paid for a month that has not started
+                      </p>
+                    ) : null}
                   </div>
 
                   <div className="flex flex-wrap gap-2 text-base">
@@ -135,7 +153,18 @@ export function MembersPage() {
                     <Btn variant="secondary" onClick={() => setPaying(m)}>
                       <Wallet size={20} aria-hidden /> Record Payment
                     </Btn>
-                    {pos.balance > 0 ? (
+                    <Btn variant="secondary" onClick={() => setHistory(m)}>
+                      <Receipt size={20} aria-hidden /> Payment History
+                    </Btn>
+                    <Btn variant="secondary" onClick={() => setEditing(m)}>
+                      <Pencil size={20} aria-hidden /> Edit Details
+                    </Btn>
+                    {m.billingType === 'monthly' ? (
+                      <Btn variant="secondary" onClick={() => setChangingRent(m)}>
+                        <TrendingUp size={20} aria-hidden /> Change Rent
+                      </Btn>
+                    ) : null}
+                    {pos.totalDue > 0 ? (
                       <Btn
                         variant="success"
                         onClick={() =>
@@ -145,7 +174,7 @@ export function MembersPage() {
                               name: m.name,
                               branchLabel: BRANCH_MAP[m.branch].short,
                               room: m.roomCode,
-                              balance: pos.balance,
+                              balance: pos.totalDue,
                               cycleDate: longDate(pos.cycleStart),
                               rent: pos.due,
                               paid: pos.paid,
@@ -177,6 +206,7 @@ export function MembersPage() {
         <div className="grid gap-4 md:grid-cols-2">
           {vacated.map((m) => {
             const s = m.settlement;
+            const pos = rentPosition(m);
             return (
               <Card key={m.id} className="flex flex-col gap-3">
                 <div className="flex items-start justify-between gap-2">
@@ -198,10 +228,28 @@ export function MembersPage() {
                     Refund returned by {s?.refundMode ?? '—'}: {money(s?.refund ?? 0)}
                   </p>
                   <p className="text-base text-slate-600 mt-1">Settled on {longDate(s?.recordedOn ?? '')}</p>
+                  <p className="mt-1 text-base font-semibold">
+                    Rent charged: {money(currentRentRate(m))} per month
+                  </p>
+                  {pos.totalDue > 0 ? (
+                    <p className="mt-1 text-base font-bold text-bad">
+                      Rent still owed: {money(pos.totalDue)}
+                    </p>
+                  ) : null}
                 </div>
                 <p className="text-base text-slate-600">
                   Exit recorded on {longDate(m.vacatedOn ?? '')} · maintenance deduction kept as PG revenue
                 </p>
+                <div className="flex flex-wrap gap-2">
+                  <Btn variant="secondary" onClick={() => setEditing(m)}>
+                    <Pencil size={20} aria-hidden /> Edit Details
+                  </Btn>
+                  {m.payments.length > 0 ? (
+                    <Btn variant="secondary" onClick={() => setHistory(m)}>
+                      <Receipt size={20} aria-hidden /> Payment History
+                    </Btn>
+                  ) : null}
+                </div>
               </Card>
             );
           })}
@@ -210,8 +258,78 @@ export function MembersPage() {
 
       <AddMemberModal key={adding ? 'adding' : 'closed'} open={adding} onClose={() => setAdding(false)} />
       <BulkMembersModal open={bulkOpen} onClose={() => setBulkOpen(false)} />
-      <RecordPaymentModal member={paying} open={!!paying} onClose={() => setPaying(null)} />
+      <RecordPaymentModal key={paying?.id ?? 'none'} member={paying} open={!!paying} onClose={() => setPaying(null)} />
       <VacateModal member={vacating} open={!!vacating} onClose={() => setVacating(null)} />
+      <ChangeRentModal member={changingRent} onClose={() => setChangingRent(null)} />
+      <EditMemberModal member={editing} onClose={() => setEditing(null)} />
+      <PaymentHistoryModal member={history} onClose={() => setHistory(null)} />
     </div>
+  );
+}
+
+/**
+ * Changes a member's rent from a given date.
+ *
+ * The new rate is added to the member's rent history — every month before the
+ * change keeps the rent it was charged at, so an increase never re-prices a
+ * month that has already been paid.
+ */
+function ChangeRentModal({ member, onClose }: { member: Member | null; onClose: () => void }) {
+  const { update } = useStore();
+  const [amount, setAmount] = useState('');
+  const [fromDate, setFromDate] = useState(todayISO());
+  const [error, setError] = useState('');
+
+  if (!member) return null;
+
+  const current = currentRentRate(member);
+
+  function save() {
+    const a = Number(amount);
+    if (!a || a <= 0) {
+      setError('Please enter the new monthly rent in rupees.');
+      return;
+    }
+    if (a === current) {
+      setError(`This member is already paying ${money(current)} — enter a different amount.`);
+      return;
+    }
+    update((s) => ({
+      ...s,
+      members: s.members.map((m) => (m.id === member!.id ? withRentChange(m, fromDate, a) : m)),
+    }));
+    window.alert(
+      `${member!.name}'s rent changed from ${money(current)} to ${money(a)} from ${longDate(fromDate)}.\n\n` +
+        `Every month up to that date keeps ${money(current)} — nothing already paid is re-priced.`,
+    );
+    setAmount('');
+    setError('');
+    onClose();
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`Change Rent — ${member.name}`}
+      subtitle={`${BRANCH_MAP[member.branch].short} · Room ${member.roomCode} · now ${money(current)}/month`}
+    >
+      <div className="space-y-4">
+        <Field label="New monthly rent (₹)" error={error}>
+          <MoneyInput value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={String(current)} />
+        </Field>
+        <Field label="New rent applies from" hint="Earlier months keep the rent they were charged at.">
+          <TextInput type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+        </Field>
+        <div className="rounded-xl bg-brand-soft px-4 py-3 text-base font-semibold text-brand-dark">
+          Months from {longDate(fromDate)} are billed at {money(Number(amount || 0))}. Every earlier month
+          stays at {money(current)}. The app keeps a full history of these changes.
+        </div>
+        <div className="flex flex-col gap-3 sm:flex-row-reverse">
+          <Btn full className="sm:flex-1" onClick={save}>Save New Rent</Btn>
+          <Btn variant="secondary" full onClick={onClose}>Cancel</Btn>
+        </div>
+      </div>
+    </Modal>
   );
 }

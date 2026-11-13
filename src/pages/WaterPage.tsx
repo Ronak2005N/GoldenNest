@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { Droplets, Plus, Truck } from 'lucide-react';
 import { useStore } from '../app/store/StoreProvider';
 import { BRANCHES, BRANCH_MAP } from '../app/store/branches';
-import type { BranchId, PaymentMode } from '../app/store/types';
+import { monthLockMessage } from '../app/store/monthLock';
+import type { AppState, BranchId, PaymentMode } from '../app/store/types';
 import { currentMonthKey, longDate, monthKey, monthLabel, todayISO } from '../shared/lib/dates';
 import { money, uid } from '../shared/lib/format';
 import { Badge, Btn, Card, EmptyState, Field, InfoRow, Modal, MoneyInput, PageIntro, SelectInput, Tabs, TextInput } from '../shared/ui';
@@ -38,6 +39,23 @@ export function WaterPage() {
   );
 }
 
+/**
+ * The month-end can bill is settled per PG. A settlement saved before this
+ * existed carries no PG on it and is treated as covering every PG, so old
+ * records keep working.
+ */
+function settlementFor(
+  settlements: AppState['canSettlements'],
+  monthKeyVal: string,
+  branchId: BranchId,
+) {
+  return (
+    settlements.find((s) => s.monthKey === monthKeyVal && s.branch === branchId) ??
+    settlements.find((s) => s.monthKey === monthKeyVal && !s.branch) ??
+    null
+  );
+}
+
 function CansTab() {
   const { state, update, branch } = useStore();
   const key = currentMonthKey();
@@ -45,19 +63,38 @@ function CansTab() {
   const [date, setDate] = useState(todayISO());
   const [entryBranch, setEntryBranch] = useState<BranchId>(branch === 'ALL' ? 'PG1' : branch);
   const [rate, setRate] = useState(String(state.canRate));
-  const [settling, setSettling] = useState(false);
+  const [settling, setSettling] = useState<BranchId | null>(null);
+
+  const scopes: BranchId[] = branch === 'ALL' ? BRANCHES.map((b) => b.id) : [branch];
 
   const logs = state.waterCans
     .filter((c) => monthKey(c.date) === key && (branch === 'ALL' || c.branch === branch))
     .sort((a, b) => b.date.localeCompare(a.date));
   const totalCans = logs.reduce((n, c) => n + c.count, 0);
-  const settlement = state.canSettlements.find((s) => s.monthKey === key);
   const bill = totalCans * state.canRate;
+
+  const perBranch = scopes.map((b) => {
+    const cans = state.waterCans
+      .filter((c) => c.branch === b && monthKey(c.date) === key)
+      .reduce((n, c) => n + c.count, 0);
+    return {
+      branch: b,
+      cans,
+      bill: cans * state.canRate,
+      settlement: settlementFor(state.canSettlements, key, b),
+    };
+  });
+  const allSettled = perBranch.every((p) => p.cans === 0 || p.settlement);
 
   function saveCans() {
     const n = Number(count);
     if (!n || n <= 0) {
       window.alert('Please enter how many cans were delivered (more than zero).');
+      return;
+    }
+    const locked = monthLockMessage(state, date, 'add this entry');
+    if (locked) {
+      window.alert(locked);
       return;
     }
     update((s) => ({
@@ -94,18 +131,72 @@ function CansTab() {
           <p className="num-xl mt-1 text-brand">{money(bill)}</p>
           <p className="text-base text-slate-600">{totalCans} cans × {money(state.canRate)}</p>
         </Card>
-        <Card className={settlement ? 'border-good/30' : 'border-warn/30'}>
+        <Card className={allSettled ? 'border-good/30' : 'border-warn/30'}>
           <p className="text-base font-semibold text-slate-600">Vendor settlement</p>
           <div className="mt-2">
-            <Badge tone={settlement ? 'good' : 'warn'}>{settlement ? 'PAID' : 'NOT YET PAID'}</Badge>
+            <Badge tone={allSettled ? 'good' : 'warn'}>
+              {allSettled ? 'ALL PAID' : 'NOT YET PAID'}
+            </Badge>
           </div>
           <p className="mt-2 text-base text-slate-600">
-            {settlement
-              ? `Paid ${money(settlement.cash + settlement.upi + settlement.card)} on ${longDate(settlement.date)}`
-              : 'Pay the vendor at month end with the button below.'}
+            {allSettled
+              ? 'Every PG with cans this month has been settled.'
+              : 'Pay each PG separately — a bill belongs to one PG at a time.'}
           </p>
         </Card>
       </div>
+
+      <section>
+        <h2 className="headline mb-3">Month-end bill for each PG</h2>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {perBranch.map((p) => {
+            const paidAmount = p.settlement
+              ? p.settlement.cash + p.settlement.upi + p.settlement.card
+              : 0;
+            const partPaid = !!p.settlement && paidAmount < p.bill;
+            return (
+            <Card
+              key={p.branch}
+              className={p.settlement && !partPaid ? 'border-good/30' : 'border-warn/30'}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-lg font-bold">{BRANCH_MAP[p.branch].short}</p>
+                  <p className="text-base text-slate-600">
+                    {p.cans} cans × {money(state.canRate)} · {monthLabel(key)}
+                  </p>
+                </div>
+                <Badge tone={p.settlement && !partPaid ? 'good' : 'warn'}>
+                  {p.settlement ? (partPaid ? 'PART PAID' : 'PAID') : 'NOT PAID'}
+                </Badge>
+              </div>
+              <p className="num-xl mt-2 text-brand">{money(p.bill)}</p>
+              {p.settlement ? (
+                <p className="mt-1 text-base text-slate-600">
+                  Paid {money(paidAmount)} on {longDate(p.settlement.date)}
+                </p>
+              ) : null}
+              {partPaid ? (
+                <p className="mt-1 text-base font-semibold text-warn">
+                  {money(p.bill - paidAmount)} is still owed to the vendor
+                </p>
+              ) : null}
+              <div className="mt-3">
+                {p.settlement ? (
+                  <Btn variant="secondary" onClick={() => setSettling(p.branch)}>
+                    Change this payment
+                  </Btn>
+                ) : (
+                  <Btn variant="success" disabled={p.cans === 0} onClick={() => setSettling(p.branch)}>
+                    {p.cans === 0 ? 'No cans logged yet' : `Mark ${money(p.bill)} as PAID`}
+                  </Btn>
+                )}
+              </div>
+            </Card>
+            );
+          })}
+        </div>
+      </section>
 
       <Card>
         <h2 className="headline">Quick daily entry — how many cans arrived today?</h2>
@@ -140,9 +231,6 @@ function CansTab() {
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="headline">Cans delivered this month</h2>
-        <Btn variant={settlement ? 'secondary' : 'success'} disabled={!!settlement || totalCans === 0} onClick={() => setSettling(true)}>
-          {settlement ? 'Month already settled' : `Mark ${money(bill)} as PAID (Cash / UPI / Card)`}
-        </Btn>
       </div>
 
       {logs.length === 0 ? (
@@ -167,10 +255,11 @@ function CansTab() {
       {settling ? (
         <SettleCansModal
           monthKeyVal={key}
-          bill={bill}
-          cans={totalCans}
+          branchId={settling}
+          bill={perBranch.find((p) => p.branch === settling)?.bill ?? 0}
+          cans={perBranch.find((p) => p.branch === settling)?.cans ?? 0}
           rate={state.canRate}
-          onClose={() => setSettling(false)}
+          onClose={() => setSettling(null)}
         />
       ) : null}
     </div>
@@ -179,18 +268,20 @@ function CansTab() {
 
 function SettleCansModal({
   monthKeyVal,
+  branchId,
   bill,
   cans,
   rate,
   onClose,
 }: {
   monthKeyVal: string;
+  branchId: BranchId;
   bill: number;
   cans: number;
   rate: number;
   onClose: () => void;
 }) {
-  const { update } = useStore();
+  const { state, update } = useStore();
   const [cash, setCash] = useState('');
   const [upi, setUpi] = useState('');
   const [card, setCard] = useState('');
@@ -205,22 +296,33 @@ function SettleCansModal({
       setError('Enter how much was paid in Cash, UPI or Card.');
       return;
     }
+    // A closed month is final — neither the payment month nor the bill month
+    // may be touched.
+    const locked =
+      monthLockMessage(state, date, 'pay this bill') ??
+      monthLockMessage(state, `${monthKeyVal}-01`, 'pay a bill for a closed month');
+    if (locked) {
+      setError(locked);
+      return;
+    }
     if (Math.abs(c + u + d - bill) > 1) {
       if (!window.confirm(`You entered ${money(c + u + d)} but the bill is ${money(bill)}. Save anyway?`)) return;
     }
     update((s) => ({
       ...s,
       canSettlements: [
-        ...s.canSettlements.filter((x) => x.monthKey !== monthKeyVal),
-        { id: uid('cst'), monthKey: monthKeyVal, date, cash: c, upi: u, card: d },
+        ...s.canSettlements.filter((x) => !(x.monthKey === monthKeyVal && x.branch === branchId)),
+        { id: uid('cst'), monthKey: monthKeyVal, branch: branchId, date, cash: c, upi: u, card: d },
       ],
     }));
-    window.alert(`Water can bill for ${monthLabel(monthKeyVal)} marked as PAID (${money(c + u + d)}).`);
+    window.alert(
+      `Water can bill for ${BRANCH_MAP[branchId].short} — ${monthLabel(monthKeyVal)} marked as PAID (${money(c + u + d)}).`,
+    );
     onClose();
   }
 
   return (
-    <Modal open onClose={onClose} title="Month-End Water Can Settlement" subtitle={`${cans} cans × ${money(rate)} = ${money(bill)}`}>
+    <Modal open onClose={onClose} title={`Month-End Water Can Settlement — ${BRANCH_MAP[branchId].short}`} subtitle={`${cans} cans × ${money(rate)} = ${money(bill)}`}>
       <div className="space-y-4">
         <div className="well px-4 py-3">
           <InfoRow label="Total can bill" value={money(bill)} />
@@ -263,6 +365,11 @@ function TankersTab() {
     const c = Number(cost);
     if (!c || c <= 0) {
       setError('Please enter the tanker cost in rupees.');
+      return;
+    }
+    const locked = monthLockMessage(state, date, 'add this tanker');
+    if (locked) {
+      setError(locked);
       return;
     }
     setError('');

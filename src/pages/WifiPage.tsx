@@ -2,22 +2,39 @@ import { useState } from 'react';
 import { AlertTriangle, Check, Copy, Plus, RefreshCw, Wifi as WifiIcon } from 'lucide-react';
 import { useStore } from '../app/store/StoreProvider';
 import { BRANCHES, BRANCH_MAP } from '../app/store/branches';
+import { monthLockMessage } from '../app/store/monthLock';
 import type { BranchId, PaymentMode, Wifi } from '../app/store/types';
-import { addDays, daysBetween, longDate, todayISO } from '../shared/lib/dates';
+import { addDays, longDate, todayISO, dueStatus } from '../shared/lib/dates';
 import { money, uid } from '../shared/lib/format';
 import { Badge, Btn, Card, EmptyState, Field, Modal, MoneyInput, PageIntro, SelectInput, TextInput } from '../shared/ui';
 
 type Urgency = 'expired' | 'soon' | 'ok';
 
 function urgency(w: Wifi): Urgency {
-  const days = daysBetween(todayISO(), w.expiryDate);
-  if (days < 0) return 'expired';
-  if (days <= 5) return 'soon';
-  return 'ok';
+  const status = dueStatus(w.expiryDate);
+  return status === 'overdue' ? 'expired' : status === 'soon' ? 'soon' : 'ok';
+}
+
+/** How many days one recharge buys for this connection. */
+function validityOf(w: Wifi): number {
+  return w.validityDays && w.validityDays > 0 ? w.validityDays : 30;
+}
+
+/**
+ * What this connection costs for a plan of the given length.
+ *
+ * A 365-day plan is not the monthly rate — the owner enters the real price
+ * once and every later recharge of that plan is pre-filled with it.
+ */
+export function wifiPlanPrice(w: Wifi, days: number): number {
+  const known = (w.planPrices ?? []).find((p) => p.days === days);
+  if (known) return known.amount;
+  if (days === validityOf(w)) return w.monthlyAmount;
+  return w.monthlyAmount;
 }
 
 export function WifiPage() {
-  const { state, branch, update } = useStore();
+  const { state, branch } = useStore();
   const [adding, setAdding] = useState(false);
   const [recharging, setRecharging] = useState<Wifi | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -39,26 +56,9 @@ export function WifiPage() {
   }
 
   function quickRecharge(w: Wifi) {
-    const mode = window.prompt(
-      `Recharge “${w.label}” for ${money(w.monthlyAmount)}.\n\nType how you paid: UPI, Cash or Card`,
-      'UPI',
-    );
-    if (!mode) return;
-    const norm = mode.trim().toLowerCase();
-    const payMode: PaymentMode = norm.includes('cash') ? 'Cash' : norm.includes('card') ? 'Card' : 'UPI';
-    const base = w.expiryDate < todayISO() ? todayISO() : w.expiryDate;
-    const newExpiry = addDays(base, 30);
-    update((s) => ({
-      ...s,
-      wifi: s.wifi.map((x) => (x.id === w.id ? { ...x, expiryDate: newExpiry } : x)),
-      wifiRecharges: [
-        ...s.wifiRecharges,
-        { id: uid('wr'), wifiId: w.id, date: todayISO(), amount: w.monthlyAmount, mode: payMode },
-      ],
-    }));
-    window.alert(
-      `Recharge saved for ${w.label}: ${money(w.monthlyAmount)} paid by ${payMode}.\nNew expiry date: ${longDate(newExpiry)}.`,
-    );
+    // The plan length and the amount are confirmed before anything is saved —
+    // a yearly plan is not the monthly rate.
+    setRecharging(w);
   }
 
   return (
@@ -148,6 +148,10 @@ export function WifiPage() {
                   <span className="num-md">{money(w.monthlyAmount)}</span>
                 </div>
                 <div className="flex justify-between gap-3 text-base">
+                  <span className="text-slate-600">One recharge adds</span>
+                  <span className="num-md">{validityOf(w)} days</span>
+                </div>
+                <div className="flex justify-between gap-3 text-base">
                   <span className="text-slate-600">Expiry / recharge due</span>
                   <span className={`num-md ${u === 'ok' ? '' : u === 'soon' ? 'text-warn' : 'text-bad'}`}>
                     {longDate(w.expiryDate)}
@@ -159,7 +163,7 @@ export function WifiPage() {
                     variant={u === 'ok' ? 'secondary' : u === 'soon' ? 'warn' : 'danger'}
                     onClick={() => quickRecharge(w)}
                   >
-                    <RefreshCw size={20} aria-hidden /> Recharge Done (+30 Days)
+                    <RefreshCw size={20} aria-hidden /> Recharge Done (+{validityOf(w)} Days)
                   </Btn>
                   <Btn variant="ghost" onClick={() => setRecharging(w)}>
                     Choose another date or amount
@@ -185,6 +189,7 @@ function AddWifiModal({ open, onClose }: { open: boolean; onClose: () => void })
   const [password, setPassword] = useState('');
   const [amount, setAmount] = useState('899');
   const [expiry, setExpiry] = useState(addDays(todayISO(), 30));
+  const [validityDays, setValidityDays] = useState('30');
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   function save() {
@@ -198,7 +203,16 @@ function AddWifiModal({ open, onClose }: { open: boolean; onClose: () => void })
       ...s,
       wifi: [
         ...s.wifi,
-        { id: uid('wifi'), label: label.trim(), branch: wBranch, ssid: ssid.trim(), password, monthlyAmount: Number(amount) || 0, expiryDate: expiry },
+        {
+          id: uid('wifi'),
+          label: label.trim(),
+          branch: wBranch,
+          ssid: ssid.trim(),
+          password,
+          monthlyAmount: Number(amount) || 0,
+          expiryDate: expiry,
+          validityDays: Number(validityDays) || 30,
+        },
       ],
     }));
     window.alert(`${label.trim()} added. Expiry ${longDate(expiry)}.`);
@@ -233,6 +247,21 @@ function AddWifiModal({ open, onClose }: { open: boolean; onClose: () => void })
             <TextInput type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} />
           </Field>
         </div>
+        <Field label="One recharge buys how many days?" hint="A monthly plan is 30 days, a quarterly plan is 90 days.">
+          <div className="flex flex-wrap gap-2">
+            {[30, 60, 90, 180, 365].map((d) => (
+              <Btn
+                key={d}
+                variant="secondary"
+                onClick={() => setValidityDays(String(d))}
+                aria-pressed={validityDays === String(d)}
+              >
+                {d} days
+              </Btn>
+            ))}
+          </div>
+          <TextInput value={validityDays} onChange={(e) => setValidityDays(e.target.value)} inputMode="numeric" />
+        </Field>
         <div className="flex flex-col gap-3 sm:flex-row-reverse">
           <Btn full className="sm:flex-1" onClick={save}>Save Wi-Fi Connection</Btn>
           <Btn variant="secondary" full onClick={onClose}>Cancel</Btn>
@@ -243,30 +272,50 @@ function AddWifiModal({ open, onClose }: { open: boolean; onClose: () => void })
 }
 
 function RechargeModal({ wifi, onClose }: { wifi: Wifi | null; onClose: () => void }) {
-  const { update } = useStore();
+  const { state, update } = useStore();
   const [amount, setAmount] = useState('');
   const [mode, setMode] = useState<PaymentMode>('UPI');
   const [date, setDate] = useState(todayISO());
   const [newExpiry, setNewExpiry] = useState('');
+  const [days, setDays] = useState('');
 
   if (!wifi) return null;
 
-  const suggested = addDays(wifi.expiryDate < todayISO() ? todayISO() : wifi.expiryDate, 30);
-  const value = amount === '' ? String(wifi.monthlyAmount) : amount;
+  const planDays = days === '' ? validityOf(wifi) : Number(days || 30);
+  const suggestedPrice = wifiPlanPrice(wifi, planDays);
+  const value = amount === '' ? String(suggestedPrice) : amount;
+  const base = wifi.expiryDate < todayISO() ? todayISO() : wifi.expiryDate;
+  const suggested = addDays(base, planDays);
   const expiryValue = newExpiry || suggested;
 
   function save() {
     const a = Number(value);
+    if (!a || a <= 0) {
+      window.alert('Please enter the amount you paid for this recharge.');
+      return;
+    }
+    const locked = monthLockMessage(state, date, 'record this recharge');
+    if (locked) {
+      window.alert(locked);
+      return;
+    }
+    // Remember what this plan costs, so the next recharge of it is pre-filled.
+    const planPrices = [...(wifi!.planPrices ?? [])].filter((p) => p.days !== planDays);
+    planPrices.push({ days: planDays, amount: a });
     update((s) => ({
       ...s,
-      wifi: s.wifi.map((x) => (x.id === wifi!.id ? { ...x, expiryDate: expiryValue } : x)),
+      wifi: s.wifi.map((x) =>
+        x.id === wifi!.id
+          ? { ...x, expiryDate: expiryValue, planPrices, validityDays: planDays }
+          : x,
+      ),
       wifiRecharges: [
         ...s.wifiRecharges,
         { id: uid('wr'), wifiId: wifi!.id, date, amount: a, mode },
       ],
     }));
     window.alert(
-      `Recharge saved for ${wifi!.label}: ${money(a)} by ${mode}. New expiry: ${longDate(expiryValue)}.`,
+      `Recharge saved for ${wifi!.label}: ${money(a)} paid by ${mode} for ${planDays} days.\nNew expiry date: ${longDate(expiryValue)}.`,
     );
     setAmount('');
     setNewExpiry('');
@@ -276,7 +325,34 @@ function RechargeModal({ wifi, onClose }: { wifi: Wifi | null; onClose: () => vo
   return (
     <Modal open onClose={onClose} title={`Recharge — ${wifi.label}`} subtitle={`Current expiry: ${longDate(wifi.expiryDate)}`}>
       <div className="space-y-4">
-        <Field label="Amount paid (₹)">
+        <div>
+          <p className="mb-1.5 text-base font-semibold">How long is this recharge for?</p>
+          <div className="flex flex-wrap gap-2">
+            {[30, 60, 90, 180, 365].map((d) => (
+              <Btn
+                key={d}
+                variant={planDays === d ? 'primary' : 'secondary'}
+                onClick={() => setDays(String(d))}
+                aria-pressed={planDays === d}
+              >
+                {d} days
+              </Btn>
+            ))}
+          </div>
+          <div className="mt-2">
+            <TextInput
+              value={days}
+              onChange={(e) => setDays(e.target.value)}
+              inputMode="numeric"
+              placeholder={String(validityOf(wifi))}
+              aria-label="Recharge length in days"
+            />
+          </div>
+        </div>
+        <Field
+          label="Amount paid (₹)"
+          hint={`Type what you actually paid for ${planDays} days. A yearly plan is not the monthly rate.`}
+        >
           <MoneyInput value={value} onChange={(e) => setAmount(e.target.value)} />
         </Field>
         <Field label="Paid by">
@@ -289,7 +365,7 @@ function RechargeModal({ wifi, onClose }: { wifi: Wifi | null; onClose: () => vo
         <Field label="Payment date">
           <TextInput type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         </Field>
-        <Field label="New expiry date" hint={`Suggested: +30 days = ${longDate(suggested)}`}>
+        <Field label="New expiry date" hint={`Suggested: +${planDays} days = ${longDate(suggested)}`}>
           <TextInput type="date" value={expiryValue} onChange={(e) => setNewExpiry(e.target.value)} />
         </Field>
         <div className="flex flex-col gap-3 sm:flex-row-reverse">
