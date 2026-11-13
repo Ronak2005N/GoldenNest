@@ -5,7 +5,7 @@ import { useStore } from '../../../app/store/StoreProvider';
 import { addMonths, longDate, todayISO } from '../../../shared/lib/dates';
 import { digitsOnly, isValidMobile, money, uid } from '../../../shared/lib/format';
 import { Badge, Btn, Field, Modal, MoneyInput, SelectInput, TextInput } from '../../../shared/ui';
-import { getFreeBedIndices, getNextAvailableBedIndex, bedLabel } from '../../../app/store/beds';
+import { getFreeBedIndices, bedLabel } from '../../../app/store/beds';
 
 export interface AdmitPrefill {
   branch?: BranchId;

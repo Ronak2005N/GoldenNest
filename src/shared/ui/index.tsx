@@ -115,7 +115,7 @@ export function Modal({
 }: {
   open: boolean;
   title: string;
-  subtitle?: string;
+  subtitle?: React.ReactNode;
   onClose: () => void;
   children: React.ReactNode;
   wide?: boolean;

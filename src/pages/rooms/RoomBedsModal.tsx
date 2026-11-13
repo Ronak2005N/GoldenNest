@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { Bed, Plus, MoreVertical, User, UserPlus, X, Trash2 } from 'lucide-react';
 import { useStore } from '../../app/store/StoreProvider';
 import { BRANCH_MAP } from '../../app/store/branches';
@@ -95,7 +95,7 @@ export function RoomBedsModal({ room, onClose }: RoomBedsModalProps) {
         subtitle={
           <div className="flex items-center gap-2">
             <Badge tone={room.ac ? 'info' : 'neutral'}>{room.ac ? 'AC' : 'NON-AC'}</Badge>
-            <Badge tone="neutral">{room.monthlyRent} per bed/mo</Badge>
+            <Badge tone="neutral">₹{room.monthlyRent} per bed/mo</Badge>
           </div>
         }
         wide

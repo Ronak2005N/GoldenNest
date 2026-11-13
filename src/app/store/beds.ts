@@ -1,6 +1,6 @@
 /** Bed slot utilities for the Golden Nest PG Manager */
 
-import type { AppState, BranchId, BedSlot, Room } from './types';
+import type { AppState, BranchId, BedSlot } from './types';
 
 /**
  * Get all bed slots belonging to a specific room.
