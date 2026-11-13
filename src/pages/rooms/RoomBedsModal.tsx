@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import { Bed, Plus, MoreVertical, User, UserPlus, X } from 'lucide-react';
+import { Bed, Plus, MoreVertical, User, UserPlus, X, Trash2 } from 'lucide-react';
 import { useStore } from '../../app/store/StoreProvider';
 import { BRANCH_MAP } from '../../app/store/branches';
 import type { Room, Member, BedSlot } from '../../app/store/types';
@@ -153,7 +153,17 @@ export function RoomBedsModal({ room, onClose }: RoomBedsModalProps) {
                         </div>
                         <span className="text-base font-bold">{bedLabel(bed.bedIndex)}</span>
                       </div>
-                      <div className="relative">
+                      <div className="flex items-center gap-1">
+                        {(bedSlots.length > 1 || isOccupied) && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteBed(bed)}
+                            className="flex h-8 w-8 items-center justify-center rounded-full text-red-500 hover:bg-red-100"
+                            title="Delete bed"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => {
