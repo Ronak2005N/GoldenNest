@@ -72,10 +72,16 @@ npm run preview  # serve the production build
 - **Closed months are final:** a month the owner has closed cannot be changed by accident — no
   back-dated payment, no void, no expense edit inside it. Unlocking is one click, and closing a
   month never deletes anything.
-- **Privacy:** fresh installs start with **no sample people** (owner decision, 12 Nov 2026 —
-  zero members and staff); every ID field defaults to `"[Aadhaar Redacted]"` — never a numeric
-  ID. Rooms, Wi-Fi, water, EB, lease, catering and provision rows still seed so screens
-  demonstrate themselves.
+- **Privacy:** fresh installs start with **no sample people and no demo rows** (owner decision, 12 Nov
+  2026 — zero members, staff, water, EB, lease, catering and provision entries); every ID field
+  defaults to `"[Aadhaar Redacted]"` — never a numeric ID. Only the setup is seeded — 48 rooms, 14 EB
+  meters, the owner's own Wi-Fi connections and passwords, the can rate and the 11 item buttons —
+  and "Load Demo Data Again" is the only way to bring sample rows back.
+- **"Start From Zero" really clears the books:** every PG and every month goes back to ₹0 — members,
+  left-PG members, payments, arrears, staff, water, EB bills, lease, catering, Wi-Fi recharges,
+  provisions, supplier credit and closed months. The cleared books are written straight to the device
+  and the screen is rebuilt from them, the dashboard says once that it happened, and two open tabs
+  stay in step so an old tab can never put the old numbers back.
 
 ## Tests
 
@@ -85,6 +91,9 @@ npm run test:p1        # safe Excel import (merge, never delete) + import previe
 npm run test:p2        # staff proration, EB accrual, Wi-Fi plan prices, shared costs
 npm run test:p3        # staff advance carry-over, water settlements as cash, storage-full banner
 npm run test:p4        # provisions & credit, as-of arrears, month locking, Excel losslessness
+npm run test:p5        # branch transfers keep past revenue, EB bills split over the cycle,
+                       # water part-paid badge, total liabilities & advances held
+npm run test:zero      # a new device and "Start From Zero" leave every PG and month at ₹0
 npm run test:rent      # rent-cycle maths: rollover, carry-forward, old dues, pay-in-advance
 npm run test:month     # staff leaving, per-PG water settlement, month-scoped dashboard
 npm run test:excel     # two-way .xlsx round-trip against the owner's real backup file

@@ -53,9 +53,16 @@ All state lives in `localStorage`. Zero server, zero database.
 
 ## Assumptions made (from the build brief, flagged for review)
 - Sample members and staff are NOT pre-loaded — the owner confirmed on 12 November 2026 that fresh
-  installs start with zero members and staff ("start real records"). Rooms, EB meters, Wi-Fi, water,
-  lease, catering and provision sample rows still seed so every screen demonstrates itself.
-  Member import/export is verified against the sample backup
+  installs start with zero members and staff ("start real records"). Fresh installs are also free of
+  every demo row: no water, lease, catering, EB or provision samples are seeded either. Only the
+  *setup* is present — 48 rooms, 14 EB meters, the owner's own Wi-Fi connections and passwords, the
+  can rate and the 11 item buttons. "Load Demo Data Again" is the only way to bring sample rows back.
+- "Start From Zero" clears **everything — in every PG and in every month**: members, left-PG members,
+  payments, arrears, staff, water, EB bills, lease, catering, Wi-Fi recharges, provisions, supplier
+  credit and closed months. The cleared books are written straight to the device and the screen is
+  rebuilt from them, so the owner can see the books at ₹0; the dashboard says so once. Two tabs of
+  the app stay in step (a clear in one tab clears the other), so an old tab can never put the old
+  numbers back. Member import/export is verified against the sample backup
   `GoldenNest_PG_Backup_2026-11-11.xlsx` at the project root (Aadhaar redacted throughout).
 - Accent colour: deep marigold `#B45309` (user choice) on warm white `#F8FAFC`, ink `#0F172A`.
 - Default daily rate ₹500/day, default can rate ₹20/can, both editable.

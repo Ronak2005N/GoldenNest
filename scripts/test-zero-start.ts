@@ -131,5 +131,71 @@ console.log('\n=== “Start From Zero” clears the data and keeps the setup ===
   check('the item buttons are kept', cleared.provisionChips.length, used.provisionChips.length);
 }
 
+console.log('\n=== Every PG and every month is empty after the clear ===');
+{
+  // The owner's own backup: real members, payments, expenses in several months.
+  const used = seedSampleState();
+  const withEverything: AppState = {
+    ...used,
+    members: [
+      {
+        id: 'm1',
+        name: 'Ravi',
+        occupation: 'Student',
+        mobile: '9845000011',
+        govtId: '[Aadhaar Redacted]',
+        homeAddress: '',
+        branch: 'PG1',
+        floor: 'Ground',
+        roomCode: 'G1',
+        bedIndex: 1,
+        billingType: 'monthly',
+        startDate: '2026-09-18',
+        monthlyRent: 6000,
+        advance: { amount: 2000, mode: 'Cash', cash: 2000, upi: 0, card: 0, date: '2026-09-18' },
+        payments: [
+          { id: 'p1', date: '2026-10-02', cycleKey: '2026-10-18', cash: 6000, upi: 0, card: 0, branch: 'PG1' },
+          { id: 'p2', date: '2026-11-02', cycleKey: '2026-11-18', cash: 6000, upi: 0, card: 0, branch: 'PG1' },
+        ],
+        status: 'active',
+      },
+    ],
+  };
+  const cleared = zeroedState(withEverything);
+
+  const months: string[] = [];
+  for (let i = 0; i < 24; i += 1) {
+    const d = new Date(2026, 10 - i, 1);
+    months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  }
+  const branches = ['ALL', 'PG1', 'PG2', 'PG3', 'PG4'] as const;
+
+  let dirty = 0;
+  for (const m of months) {
+    for (const b of branches) {
+      const p = pnlFor(cleared, b, m);
+      if (p.revenue !== 0 || p.expenses.total !== 0 || p.net !== 0) {
+        dirty += 1;
+        console.log(`   ${m} ${b}: revenue=${p.revenue} expenses=${p.expenses.total}`);
+      }
+    }
+  }
+  check('no PG and no month has revenue or expenses left', dirty, 0);
+  check('the pending rent is zero everywhere', pendingRent(cleared, 'ALL').total, 0);
+  check('the unpaid electricity is zero', unpaidEbBills(cleared, 'ALL', key).total, 0);
+  check('the unpaid water is zero', unpaidWaterBills(cleared, 'ALL', key).total, 0);
+  check('there is no supplier credit left', provisionCreditBalances(cleared, 'ALL').length, 0);
+  check('no member is left', cleared.members.length, 0);
+  check('no staff is left', cleared.staff.length, 0);
+  check('no water can row is left', cleared.waterCans.length, 0);
+  check('no EB bill is left', cleared.ebBills.length, 0);
+  check('no lease payment is left', cleared.leasePayments.length, 0);
+  check('no catering row is left', cleared.catering.length, 0);
+  check('no Wi-Fi recharge is left', cleared.wifiRecharges.length, 0);
+  check('no provision row is left', cleared.provisionExpenses.length, 0);
+  check('no closed month is left', cleared.closedMonths.length, 0);
+  check('the setup is still there', cleared.rooms.length, 48);
+}
+
 console.log(`\n${failures === 0 ? 'ALL TESTS PASSED' : `${failures} TEST(S) FAILED`}`);
 process.exit(failures === 0 ? 0 : 1);

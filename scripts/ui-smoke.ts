@@ -460,7 +460,72 @@ async function main() {
     await page.close();
   }
 
-  // ---------- 9. dashboard: the liability card covers deposits, advance rent and staff ----------
+  // ---------- 9. "Start From Zero": the books must really be empty ----------
+  {
+    const page = await fresh(browser, 'dashboard');
+    // Put real records on the device first: demo rows in every PG and month.
+    await clickByText(page, 'button', 'Load Demo Data Again');
+    await sleep(800);
+    const beforeText = await page.evaluate(() => document.body.innerText);
+    check(
+      'the demo data is on screen before the clear',
+      !/Total Expenses This Month\s+₹0/.test(beforeText),
+      beforeText.slice(beforeText.indexOf('Total Expenses This Month'), beforeText.indexOf('Total Expenses This Month') + 40),
+    );
+
+    await clickByText(page, 'button', 'Start From Zero');
+    // The screen is rebuilt from the cleared file, so wait for the reload.
+    await page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 15000 }).catch(() => undefined);
+    await sleep(800);
+
+    const afterText = await page.evaluate(() => document.body.innerText);
+    check(
+      'the revenue is zero after the clear',
+      /Total Revenue Collected\s+₹0/.test(afterText),
+      afterText.slice(afterText.indexOf('Total Revenue Collected'), afterText.indexOf('Total Revenue Collected') + 40),
+    );
+    check(
+      'the expenses are zero after the clear',
+      /Total Expenses This Month\s+₹0/.test(afterText),
+      afterText.slice(afterText.indexOf('Total Expenses This Month'), afterText.indexOf('Total Expenses This Month') + 40),
+    );
+    check('the owner is told the books were cleared', await hasText(page, 'Everything was cleared on'));
+    check(
+      'no record is left on the device',
+      await page.evaluate(() => {
+        const raw = localStorage.getItem('golden-nest-state-v2');
+        if (!raw) return false;
+        const s = JSON.parse(raw);
+        let payments = 0;
+        for (const m of s.members) payments += m.payments.length;
+        return (
+          s.members.length === 0 &&
+          payments === 0 &&
+          s.maintenance.length === 0 &&
+          s.waterCans.length === 0 &&
+          s.canSettlements.length === 0 &&
+          s.waterTankers.length === 0 &&
+          s.ebBills.length === 0 &&
+          s.leasePayments.length === 0 &&
+          s.catering.length === 0 &&
+          s.staff.length === 0 &&
+          s.staffAdvances.length === 0 &&
+          s.staffPayouts.length === 0 &&
+          s.wifiRecharges.length === 0 &&
+          s.provisionExpenses.length === 0 &&
+          s.provisionSettlements.length === 0 &&
+          s.closedMonths.length === 0
+        );
+      }),
+    );
+    check('the setup is still there', await page.evaluate(() => {
+      const s = JSON.parse(localStorage.getItem('golden-nest-state-v2') || '{}');
+      return s.rooms?.length === 48 && s.ebMeters?.length === 14 && s.wifi?.length === 14;
+    }));
+    await page.close();
+  }
+
+  // ---------- 10. dashboard: the liability card covers deposits, advance rent and staff ----------
   {
     const page = await fresh(browser, 'dashboard');
     check(

@@ -1,6 +1,6 @@
-import { Suspense, lazy, useMemo, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Lock, LockOpen, TrendingDown, TrendingUp } from 'lucide-react';
-import { useStore } from '../app/store/StoreProvider';
+import { useStore, CLEARED_KEY } from '../app/store/StoreProvider';
 import { BRANCH_MAP } from '../app/store/branches';
 import { asOfForMonth, defaulters, pnlFor, vacatedDefaulters } from '../app/store/selectors';
 import { closeMonth, closedMonthsSorted, isMonthClosed, openMonth } from '../app/store/monthLock';
@@ -16,6 +16,19 @@ const PnlCharts = lazy(() => import('./dashboard/PnlCharts'));
 export function DashboardPage() {
   const { state, branch, update } = useStore();
   const [month, setMonth] = useState(currentMonthKey());
+  // Shown once, after "Start From Zero": proof that the books really are empty.
+  const [clearedAt, setClearedAt] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const at = localStorage.getItem(CLEARED_KEY);
+      if (!at) return;
+      localStorage.removeItem(CLEARED_KEY);
+      setClearedAt(at);
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const pnl = useMemo(() => pnlFor(state, branch, month), [state, branch, month]);
   // Pending rent is measured at the end of the month being looked at, so an
@@ -48,6 +61,18 @@ export function DashboardPage() {
         title="Profit & Loss Dashboard"
         hint="One month at a time. Revenue is money received; expenses are money spent."
       />
+
+      {clearedAt ? (
+        <Card className="mb-5 border-good/40">
+          <p className="text-base font-semibold text-good">
+            Everything was cleared on {longDate(clearedAt)}.
+          </p>
+          <p className="mt-1 text-base text-slate-600">
+            Every PG and every month now starts at ₹0 — only your rooms, EB meters, Wi-Fi connections
+            and item buttons are left. Add your real numbers from here on.
+          </p>
+        </Card>
+      ) : null}
 
       <div className="mb-5 flex flex-wrap items-end gap-4">
         <label className="block">
@@ -245,8 +270,9 @@ export function DashboardPage() {
         </p>
         <p className="mt-2 text-base text-slate-600">
           <strong>Starting fresh?</strong> “Start From Zero” clears every member, payment, pending
-          rupee and expense, so the profit begins at ₹0 and you feed the real numbers in from the
-          first day. Your rooms, EB meters and Wi-Fi connections stay exactly as they are.
+          rupee and expense — in every PG and in every month — so the profit begins at ₹0 and you
+          feed the real numbers in from the first day. Your rooms, EB meters and Wi-Fi connections
+          stay exactly as they are.
         </p>
         <div className="mt-4 flex flex-col gap-4">
           <ExcelSyncButtons variant="primary" />
@@ -264,7 +290,7 @@ function ResetButtons() {
   return (
     <>
       <Btn variant="danger" onClick={resetToEmpty}>
-        Start From Zero (clear all members, payments &amp; expenses)
+        Start From Zero (clear ALL data &mdash; every PG, every month)
       </Btn>
       <Btn variant="secondary" onClick={resetToSample}>
         Load Demo Data Again (sample rows to try the screens)
