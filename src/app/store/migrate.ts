@@ -45,6 +45,15 @@ export function migrateState(state: AppState): AppState {
     status: p.status ?? ('paid' as const),
   }));
 
+  // Migrate bedSlots if not present (version 3 adds bedSlots)
+  const bedSlots = (state as any).bedSlots ?? state.rooms.flatMap((r) =>
+    Array.from({ length: r.sharing }, (_, i) => ({
+      id: `bed_${r.id}_${i + 1}`,
+      roomId: r.id,
+      bedIndex: i + 1,
+    }))
+  );
+
   return {
     ...state,
     version: APP_STATE_VERSION,
@@ -52,6 +61,7 @@ export function migrateState(state: AppState): AppState {
     wifi,
     staff,
     provisionExpenses,
+    bedSlots,
     // Newer lists start empty — no record is ever invented or lost.
     provisionSettlements: state.provisionSettlements ?? [],
     closedMonths: state.closedMonths ?? [],

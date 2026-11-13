@@ -33,6 +33,17 @@ export interface Room {
   monthlyRent: number;
 }
 
+/**
+ * Represents a physical bed slot in a room.
+ * Bed slots persist independently of room's sharing configuration.
+ * Each slot can be Free (no active member) or Occupied (has an active member).
+ */
+export interface BedSlot {
+  id: string;           // Unique bed slot ID (e.g., "bed_room_G1_1")
+  roomId: string;       // Parent room's ID
+  bedIndex: number;     // Display number (1-based, for "BED 1", "BED 2", etc.)
+}
+
 export interface RentPayment {
   id: string;
   date: string; // yyyy-mm-dd
@@ -333,6 +344,8 @@ export interface ClosedMonth {
 export interface AppState {
   version: number;
   rooms: Room[];
+  /** Bed slots for each room - persistent storage of actual beds */
+  bedSlots: BedSlot[];
   members: Member[];
   maintenance: MaintenanceRevenue[];
   waterCans: WaterCanLog[];

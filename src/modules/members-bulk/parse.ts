@@ -201,22 +201,78 @@ export function gridToDrafts(
 /** Column order shown to the owner in the hint line. */
 export const COLUMN_HINT = MEMBER_COLUMNS.map((c) => c.label).join(' · ');
 
+/**
+ * Get the first available bed index for a room.
+ * Uses the taken beds and claimed beds from the current import to find a free bed.
+ */
+function findFirstAvailableBed(
+  roomSharing: number,
+  existingTaken: Set<number> | undefined,
+  claimed: Map<string, Set<number>>,
+  key: string,
+  roomBedsSet: Set<number> | undefined,
+): number | null {
+  // Create a set of all occupied beds for this room
+  const occupied = new Set(existingTaken);
+  const claimedForRoom = claimed.get(key);
+  if (claimedForRoom) {
+    for (const b of claimedForRoom) {
+      occupied.add(b);
+    }
+  }
+  if (roomBedsSet) {
+    for (const b of roomBedsSet) {
+      occupied.add(b);
+    }
+  }
+
+  // Find first free bed
+  for (let i = 1; i <= Math.max(roomSharing, 10); i++) {
+    if (!occupied.has(i)) {
+      return i;
+    }
+  }
+  return null;
+}
+
 /** Room lookup per branch, plus which beds are already taken. */
 export interface RoomIndex {
-  byBranch: Map<BranchId, Map<string, { floor: Floor; sharing: number; monthlyRent: number }>>;
+  byBranch: Map<BranchId, Map<string, { floor: Floor; sharing: number; monthlyRent: number; bedSlots: Set<number> }>>;
   takenBeds: Map<string, Set<number>>;
 }
 
-export function buildRoomIndex(rooms: AppStateRooms, members: Member[]): RoomIndex {
-  const byBranch = new Map<BranchId, Map<string, { floor: Floor; sharing: number; monthlyRent: number }>>();
+export function buildRoomIndex(
+  rooms: AppStateRooms,
+  members: Member[],
+  bedSlots: { roomId: string; bedIndex: number }[] = [],
+): RoomIndex {
+  const byBranch = new Map<BranchId, Map<string, { floor: Floor; sharing: number; monthlyRent: number; bedSlots: Set<number> }>>();
   for (const r of rooms) {
     let m = byBranch.get(r.branch);
     if (!m) {
       m = new Map();
       byBranch.set(r.branch, m);
     }
-    m.set(r.code.toUpperCase(), { floor: r.floor, sharing: r.sharing, monthlyRent: r.monthlyRent });
+    m.set(r.code.toUpperCase(), {
+      floor: r.floor,
+      sharing: r.sharing,
+      monthlyRent: r.monthlyRent,
+      bedSlots: new Set(),
+    });
   }
+
+  // Add bed slots from bedSlots array
+  for (const bs of bedSlots) {
+    for (const [branch, roomsMap] of byBranch) {
+      for (const [code, info] of roomsMap) {
+        const room = rooms.find((r) => r.branch === branch && r.code === code);
+        if (room && room.id === bs.roomId) {
+          info.bedSlots.add(bs.bedIndex);
+        }
+      }
+    }
+  }
+
   const takenBeds = new Map<string, Set<number>>();
   for (const mem of members) {
     if (mem.status !== 'active') continue;
@@ -231,12 +287,13 @@ export function buildRoomIndex(rooms: AppStateRooms, members: Member[]): RoomInd
   return { byBranch, takenBeds };
 }
 
-type AppStateRooms = { branch: BranchId; code: string; floor: Floor; sharing: number; monthlyRent: number }[];
+type AppStateRooms = { branch: BranchId; code: string; floor: Floor; sharing: number; monthlyRent: number; id: string }[];
 
 /**
  * Check every draft against the rooms of the app and flag what can be imported.
  * Beds claimed by earlier rows of the same import are tracked here, so two rows
  * can never land on the same bed.
+ * If bedIndex is null, automatic assignment is attempted.
  */
 export function validateDrafts(
   drafts: DraftRow[],
@@ -264,27 +321,40 @@ export function validateDrafts(
     } else if (!room) {
       d.errors.push(`Room ${d.roomCode} does not exist in ${branch}`);
     } else {
+      const key = `${branch}|${d.roomCode}`;
+      const taken = index.takenBeds.get(key);
+      const existingMine = claimed.get(key);
+
+      // If bedIndex is null, try automatic assignment
       if (d.bedIndex === null) {
-        d.errors.push('Bed number is missing');
-      } else if (d.bedIndex > room.sharing) {
-        d.errors.push(`Room ${d.roomCode} has only ${room.sharing} bed(s)`);
+        const autoBed = findFirstAvailableBed(room.sharing, taken, claimed, key, room.bedSlots);
+        if (autoBed === null) {
+          d.errors.push(`All beds in room ${d.roomCode} are occupied (including bed slots not in room sharing)`);
+        } else {
+          d.bedIndex = autoBed;
+          // Mark as claimed
+          if (!existingMine) {
+            claimed.set(key, new Set([autoBed]));
+          } else {
+            existingMine.add(autoBed);
+          }
+        }
       } else {
-        const key = `${branch}|${d.roomCode}`;
-        const taken = index.takenBeds.get(key);
-        const mine = claimed.get(key);
-        if (taken?.has(d.bedIndex)) {
+        if (d.bedIndex > room.sharing && !room.bedSlots.has(d.bedIndex)) {
+          d.errors.push(`Bed ${d.bedIndex} does not exist in room ${d.roomCode}`);
+        } else if (taken?.has(d.bedIndex)) {
           d.errors.push(`Bed ${d.bedIndex} of room ${d.roomCode} is already occupied`);
-        } else if (mine?.has(d.bedIndex)) {
+        } else if (existingMine?.has(d.bedIndex)) {
           d.errors.push(`Bed ${d.bedIndex} of room ${d.roomCode} is used twice in this import`);
         } else {
-          let s = claimed.get(key);
-          if (!s) {
-            s = new Set();
-            claimed.set(key, s);
+          if (!existingMine) {
+            claimed.set(key, new Set([d.bedIndex]));
+          } else {
+            existingMine.add(d.bedIndex);
           }
-          s.add(d.bedIndex);
         }
       }
+
       if (d.monthlyRent === null) d.monthlyRent = room.monthlyRent;
       else if (d.monthlyRent <= 0) d.errors.push('Monthly rent must be more than 0');
     }
@@ -293,7 +363,7 @@ export function validateDrafts(
       if (part !== null && part < 0) d.errors.push('Advance split amounts cannot be negative');
     }
     if (d.advanceModeRaw && !d.advanceMode) {
-      d.warnings.push(`Advance mode “${d.advanceModeRaw}” is not known — saved as Cash`);
+      d.warnings.push(`Advance mode "${d.advanceModeRaw}" is not known — saved as Cash`);
     }
     // A split that does not add up to the advance total would silently lose money.
     const splitParts = [d.advanceCash, d.advanceUpi, d.advanceCard];

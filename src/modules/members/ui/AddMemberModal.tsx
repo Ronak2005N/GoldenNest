@@ -5,6 +5,7 @@ import { useStore } from '../../../app/store/StoreProvider';
 import { addMonths, longDate, todayISO } from '../../../shared/lib/dates';
 import { digitsOnly, isValidMobile, money, uid } from '../../../shared/lib/format';
 import { Badge, Btn, Field, Modal, MoneyInput, SelectInput, TextInput } from '../../../shared/ui';
+import { getFreeBedIndices, getNextAvailableBedIndex, bedLabel } from '../../../app/store/beds';
 
 export interface AdmitPrefill {
   branch?: BranchId;
@@ -16,17 +17,14 @@ export interface AdmitPrefill {
 const OCCUPATIONS: Occupation[] = ['Student', 'Teacher / Faculty', 'IT / Working Professional', 'Other'];
 const MODES: PaymentModeOrSplit[] = ['Cash', 'UPI', 'Card', 'Split'];
 
+/**
+ * Get vacant bed indices using the bed slot system.
+ * This function returns all bed slots that exist for the room and are free.
+ */
 export function vacantBeds(state: AppState, branch: BranchId, roomCode: string): number[] {
   const room = state.rooms.find((r) => r.branch === branch && r.code === roomCode);
   if (!room) return [];
-  const taken = new Set(
-    state.members
-      .filter((m) => m.status === 'active' && m.branch === branch && m.roomCode === roomCode)
-      .map((m) => m.bedIndex),
-  );
-  const free: number[] = [];
-  for (let i = 1; i <= room.sharing; i++) if (!taken.has(i)) free.push(i);
-  return free;
+  return getFreeBedIndices(state, room.id);
 }
 
 /* The three heavy blocks are memoised: typing a name never re-renders the
@@ -82,7 +80,7 @@ const StaySection = memo(function StaySection({
             <option value="">Choose a room…</option>
             {rooms.map((r) => (
               <option key={r.id} value={r.code}>
-                {r.code} ({r.sharing}-Sharing, {r.ac ? 'AC' : 'Non-AC'})
+                {r.code} ({r.sharing}-sharing, {r.ac ? 'AC' : 'Non-AC'})
               </option>
             ))}
           </SelectInput>
@@ -108,7 +106,7 @@ const StaySection = memo(function StaySection({
                     : 'border-good/35 bg-good/[0.07] text-good hover:bg-good/[0.13]'
                 }`}
               >
-                Bed {b} — FREE
+                {bedLabel(b)}
               </button>
             ))}
           </div>
@@ -305,7 +303,16 @@ export function AddMemberModal({
   const [branch, setBranch] = useState<BranchId>(prefill?.branch ?? 'PG1');
   const [floor, setFloor] = useState<Floor>(prefill?.floor ?? 'Ground');
   const [roomCode, setRoomCode] = useState(prefill?.roomCode ?? '');
-  const [bedIndex, setBedIndex] = useState<number>(prefill?.bedIndex ?? 0);
+  // Initialize bedIndex: use prefill if provided and valid, otherwise auto-select first available
+  const [bedIndex, setBedIndex] = useState<number>(() => {
+    if (prefill?.bedIndex && prefill.bedIndex > 0) return prefill.bedIndex;
+    // Auto-select first available bed when room is preselected
+    if (prefill?.roomCode) {
+      const freeBeds = vacantBeds(state, prefill.branch ?? 'PG1', prefill.roomCode);
+      return freeBeds[0] ?? 0;
+    }
+    return 0;
+  });
   const [billingType, setBillingType] = useState<'monthly' | 'daily'>('monthly');
   const [startDate, setStartDate] = useState(todayISO());
   const [endDate, setEndDate] = useState('');

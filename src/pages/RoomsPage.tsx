@@ -1,35 +1,30 @@
 import { useMemo, useState } from 'react';
-import { Pencil, UserPlus } from 'lucide-react';
+import { Pencil } from 'lucide-react';
 import { useStore } from '../app/store/StoreProvider';
 import { BRANCH_MAP } from '../app/store/branches';
 import type { BranchId, Floor, Room } from '../app/store/types';
-import { AddMemberModal } from '../modules/members';
-import type { AdmitPrefill } from '../modules/members';
 import { money } from '../shared/lib/format';
-import { Badge, Btn, Card, EmptyState, Field, Modal, MoneyInput, PageIntro, SelectInput } from '../shared/ui';
-
-type Bed = { index: number; memberName: string | null };
+import { Badge, Btn, Card, EmptyState, Field, Modal, MoneyInput, PageIntro, SelectInput, TextInput } from '../shared/ui';
+import { RoomBedsModal } from './rooms/RoomBedsModal';
 
 export function RoomsPage() {
   const { state, branch } = useStore();
   const [floorFilter, setFloorFilter] = useState<'ALL' | Floor>('ALL');
-  const [sharingFilter, setSharingFilter] = useState<'ALL' | '1' | '2' | '3' | '4'>('ALL');
-  const [catFilter, setCatFilter] = useState<'ALL' | 'AC' | 'Non-AC'>('ALL');
+  const [searchQuery, setSearchQuery] = useState('');
   const [editing, setEditing] = useState<Room | null>(null);
-  const [admit, setAdmit] = useState<AdmitPrefill | null>(null);
+  const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
 
+  // Filter rooms by branch, floor, and search
   const rooms = useMemo(() => {
     return state.rooms.filter((r) => {
       if (branch !== 'ALL' && r.branch !== branch) return false;
       if (floorFilter !== 'ALL' && r.floor !== floorFilter) return false;
-      if (sharingFilter !== 'ALL' && String(r.sharing) !== sharingFilter) return false;
-      if (catFilter !== 'ALL' && (r.ac ? 'AC' : 'Non-AC') !== catFilter) return false;
+      if (searchQuery && !r.code.toLowerCase().includes(searchQuery.toLowerCase())) return false;
       return true;
     });
-  }, [state.rooms, branch, floorFilter, sharingFilter, catFilter]);
+  }, [state.rooms, branch, floorFilter, searchQuery]);
 
-  /* One pass over the members instead of scanning the whole list per room —
-     this is what keeps the 48-room screen smooth with 200+ members. */
+  // Calculate occupancy
   const occupancy = useMemo(() => {
     const map = new Map<string, Map<number, string>>();
     for (const m of state.members) {
@@ -45,157 +40,127 @@ export function RoomsPage() {
     return map;
   }, [state.members]);
 
-  function bedsFor(room: Room): Bed[] {
-    const taken = occupancy.get(`${room.branch}|${room.code}`);
-    return Array.from({ length: room.sharing }, (_, i) => {
-      const idx = i + 1;
-      return { index: idx, memberName: taken?.get(idx) ?? null };
-    });
-  }
-
-  const totalBeds = rooms.reduce((n, r) => n + r.sharing, 0);
-  const occupied = rooms.reduce((n, r) => n + bedsFor(r).filter((b) => b.memberName).length, 0);
-  const vacant = totalBeds - occupied;
-
   const branchesShown = branch === 'ALL' ? (['PG1', 'PG2', 'PG3', 'PG4'] as BranchId[]) : [branch as BranchId];
 
   return (
-    <div>
-      <PageIntro
-        title="Rooms & Vacant Beds"
-        hint="Green beds are free — tap one to admit a new member straight into that bed."
-      />
-
-      <Card className="mb-5">
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Field label="Floor">
-            <SelectInput value={floorFilter} onChange={(e) => setFloorFilter(e.target.value as 'ALL' | Floor)}>
-              <option value="ALL">All floors</option>
-              <option>Ground</option>
-              <option>First</option>
-              <option>Second</option>
-              <option>Third</option>
-            </SelectInput>
-          </Field>
-          <Field label="Sharing type">
-            <SelectInput value={sharingFilter} onChange={(e) => setSharingFilter(e.target.value as typeof sharingFilter)}>
-              <option value="ALL">Any sharing</option>
-              <option value="1">1-Sharing</option>
-              <option value="2">2-Sharing</option>
-              <option value="3">3-Sharing</option>
-              <option value="4">4-Sharing</option>
-            </SelectInput>
-          </Field>
-          <Field label="Room category">
-            <SelectInput value={catFilter} onChange={(e) => setCatFilter(e.target.value as typeof catFilter)}>
-              <option value="ALL">AC and Non-AC</option>
-              <option>AC</option>
-              <option>Non-AC</option>
-            </SelectInput>
-          </Field>
-        </div>
-        <div className="mt-4 flex flex-wrap gap-3">
-          <Badge tone="good">{vacant} vacant beds</Badge>
-          <Badge tone="neutral">{occupied} occupied</Badge>
-          <Badge tone="info">{rooms.length} rooms shown</Badge>
-          <Badge tone="warn">{money(rooms.reduce((n, r) => n + r.monthlyRent, 0))} total rent capacity / month</Badge>
-        </div>
-      </Card>
-
-      {rooms.length === 0 ? (
-        <EmptyState
-          title="No rooms match these filters"
-          hint="Change the floor, sharing or AC filter above to see rooms."
+      <div>
+        <PageIntro
+          title="Rooms & Vacant Beds"
+          hint="Tap any room card to manage its occupants. Free beds allow direct member admission."
         />
-      ) : (
-        branchesShown.map((b) => {
-          const branchRooms = rooms.filter((r) => r.branch === b);
-          if (!branchRooms.length) return null;
-          return (
-            <section key={b} className="mb-8">
-              <h2 className="headline mb-3 flex flex-wrap items-center gap-3">
-                {BRANCH_MAP[b].name}
-                {BRANCH_MAP[b].comingSoon ? <Badge tone="warn">Coming Soon</Badge> : null}
-              </h2>
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {branchRooms.map((room) => {
-                  const beds = bedsFor(room);
-                  const free = beds.filter((x) => !x.memberName).length;
-                  return (
-                    <Card key={room.id} className="cv-auto flex flex-col gap-3">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <p className="num-xl">{room.code}</p>
-                          <p className="text-base text-slate-600">{room.floor} Floor</p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setEditing(room)}
-                          aria-label={`Edit room ${room.code}`}
-                          className="press flex min-h-[52px] min-w-[52px] items-center justify-center gap-1.5 rounded-xl border border-line px-3 text-base font-semibold hover:border-brand hover:text-brand"
-                        >
-                          <Pencil size={20} aria-hidden /> Edit
-                        </button>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Badge tone="neutral">{room.sharing}-Sharing</Badge>
-                        <Badge tone={room.ac ? 'info' : 'neutral'}>{room.ac ? 'AC' : 'Non-AC'}</Badge>
-                        <Badge tone={free > 0 ? 'good' : 'bad'}>{free > 0 ? `${free} free` : 'Full'}</Badge>
-                      </div>
-                      <p className="text-base text-slate-600">{money(room.monthlyRent)} per bed / month</p>
-                      <div className="flex flex-wrap gap-2">
-                        {beds.map((bed) =>
-                          bed.memberName ? (
-                            <div
-                              key={bed.index}
-                              title={`Bed ${bed.index}: occupied by ${bed.memberName}`}
-                              className="well flex min-h-[58px] min-w-[128px] flex-1 flex-col justify-center px-3 py-1.5"
-                            >
-                              <span className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-                                Bed {bed.index}
-                              </span>
-                              <span className="truncate text-base font-semibold leading-tight">
-                                {bed.memberName}
-                              </span>
-                            </div>
-                          ) : (
-                            <button
-                              key={bed.index}
-                              type="button"
-                              onClick={() =>
-                                setAdmit({ branch: room.branch, floor: room.floor, roomCode: room.code, bedIndex: bed.index })
-                              }
-                              aria-label={`Bed ${bed.index} free — tap to admit a member`}
-                              className="press flex min-h-[58px] min-w-[128px] flex-1 flex-col items-start justify-center rounded-xl border border-dashed border-good/45 bg-good/[0.08] px-3 py-1.5 text-left hover:border-good hover:bg-good/[0.14]"
-                            >
-                              <span className="text-sm font-semibold uppercase tracking-wide text-good/80">
-                                Bed {bed.index}
-                              </span>
-                              <span className="flex items-center gap-1 text-base font-bold leading-tight text-good">
-                                <UserPlus size={20} aria-hidden /> Free
-                              </span>
-                            </button>
-                          ),
-                        )}
-                      </div>
-                    </Card>
-                  );
-                })}
-              </div>
-            </section>
-          );
-        })
-      )}
 
-      {editing ? <EditRoomModal room={editing} onClose={() => setEditing(null)} /> : null}
-      <AddMemberModal
-        key={admit ? `admit-${admit.roomCode}-${admit.bedIndex}` : 'admit-closed'}
-        open={!!admit}
-        prefill={admit ?? undefined}
-        onClose={() => setAdmit(null)}
-      />
-    </div>
-  );
+        {/* Filters */}
+        <Card className="mb-5">
+          <div className="grid gap-4 sm:grid-cols-4">
+            <Field label="Floor">
+              <SelectInput value={floorFilter} onChange={(e) => setFloorFilter(e.target.value as typeof floorFilter)}>
+                <option value="ALL">All floors</option>
+                <option>Ground</option>
+                <option>First</option>
+                <option>Second</option>
+                <option>Third</option>
+              </SelectInput>
+            </Field>
+            <Field label="Search">
+              <TextInput
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Room ID (e.g., G1)"
+              />
+            </Field>
+          </div>
+        </Card>
+
+        {/* Stats Summary */}
+        {rooms.length > 0 ? (
+          <>
+            <div className="mb-4 flex flex-wrap gap-3">
+              <Badge tone="neutral">{rooms.length} rooms shown</Badge>
+              {(() => {
+                const totalBeds = rooms.reduce((n, r) => n + r.sharing, 0);
+                const occupied = rooms.reduce((n, r) => {
+                  const key = `${r.branch}|${r.code}`;
+                  return n + (occupancy.get(key)?.size ?? 0);
+                }, 0);
+                return (
+                  <>
+                    <Badge tone="good">{totalBeds - occupied} vacant beds</Badge>
+                    <Badge tone="neutral">{occupied} occupied</Badge>
+                  </>
+                );
+              })()}
+              <Badge tone="info">{money(rooms.reduce((n, r) => n + r.monthlyRent * r.sharing, 0))} total rent capacity / month</Badge>
+            </div>
+
+            {/* Rooms Grid */}
+            {branchesShown.map((b) => {
+              const branchRooms = rooms.filter((r) => r.branch === b);
+              if (!branchRooms.length) return null;
+              return (
+                <section key={b} className="mb-8">
+                  <h2 className="headline mb-3 flex items-center gap-3">
+                    {BRANCH_MAP[b].name}
+                    {BRANCH_MAP[b].comingSoon ? <Badge tone="warn">Coming Soon</Badge> : null}
+                  </h2>
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    {branchRooms.map((room) => {
+                      return (
+                        <div
+                          key={room.id}
+                          className="cv-auto cursor-pointer hover:shadow-lg transition-shadow"
+                          onClick={() => setSelectedRoom(room)}
+                        >
+                          <Card className="flex flex-col gap-4">
+                            {/* First Row: Room ID + Edit Button */}
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="num-xl font-semibold text-brand-dark">{room.code}</p>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditing(room);
+                                }}
+                                aria-label={`Edit room ${room.code}`}
+                                className="press flex min-h-[48px] min-w-[48px] items-center justify-center gap-1.5 rounded-xl border border-line px-3 text-base font-semibold hover:border-brand hover:text-brand"
+                              >
+                                <Pencil size={18} aria-hidden /> Edit
+                              </button>
+                            </div>
+
+                            {/* Second Row: Floor Label */}
+                            <p className="text-sm text-slate-500">{room.floor} Floor</p>
+
+                            {/* Third Row: Sharing Capacity + AC Status Badges */}
+                            <div className="flex flex-wrap gap-2">
+                              <Badge tone="neutral">{room.sharing}-SHARING</Badge>
+                              <Badge tone={room.ac ? 'info' : 'neutral'}>{room.ac ? 'AC' : 'NON-AC'}</Badge>
+                            </div>
+
+                            {/* Fourth Row: Monthly Rate */}
+                            <p className="text-base text-slate-600">{money(room.monthlyRent)} per bed / month</p>
+                          </Card>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              );
+            })}
+          </>
+        ) : (
+          <EmptyState
+            title="No rooms match these filters"
+            hint="Change the floor filter or search term to see rooms."
+          />
+        )}
+
+        {/* Edit Room Modal */}
+        {editing ? <EditRoomModal room={editing} onClose={() => setEditing(null)} /> : null}
+
+        {/* Room Beds Modal */}
+        <RoomBedsModal room={selectedRoom} onClose={() => setSelectedRoom(null)} />
+      </div>
+    );
 }
 
 function EditRoomModal({ room, onClose }: { room: Room; onClose: () => void }) {
@@ -212,7 +177,7 @@ function EditRoomModal({ room, onClose }: { room: Room; onClose: () => void }) {
     const newSharing = sharing === '' ? live.sharing : (Number(sharing) as Room['sharing']);
     if (newSharing < occupied) {
       window.alert(
-        `This room currently has ${occupied} member(s). Sharing cannot be set below that. Vacate a member first.`,
+        `This room currently has ${occupied} member${occupied !== 1 ? 's' : ''} in it. Sharing cannot be set below that. Vacate a member first.`,
       );
       return;
     }
@@ -247,7 +212,7 @@ function EditRoomModal({ room, onClose }: { room: Room; onClose: () => void }) {
         <Field label="Default monthly rent per bed (₹)" hint={`Currently ${money(live.monthlyRent)}. Existing members keep their own rent.`}>
           <MoneyInput value={rent} onChange={(e) => setRent(e.target.value)} />
         </Field>
-        <p className="text-base text-slate-600">{occupied} member(s) currently stay in this room.</p>
+        <p className="text-base text-slate-600">{occupied} member{occupied !== 1 ? 's' : ''} currently stay in this room.</p>
         <div className="flex flex-col gap-3 sm:flex-row-reverse">
           <Btn full className="sm:flex-1" onClick={save}>
             Save Room Changes

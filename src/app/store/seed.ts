@@ -2,6 +2,7 @@ import { BRANCHES } from './branches';
 import type {
   AppState,
   BranchId,
+  BedSlot,
   EbBill,
   EbMeter,
   Floor,
@@ -68,6 +69,27 @@ export function buildRooms(): Room[] {
     }
   }
   return rooms;
+}
+
+/**
+ * Build initial bed slots for each room based on room sharing capacity.
+ * Each room starts with bed slots matching its sharing type.
+ */
+export function buildInitialBedSlots(): BedSlot[] {
+  const rooms = buildRooms();
+  const bedSlots: BedSlot[] = [];
+
+  for (const room of rooms) {
+    for (let i = 1; i <= room.sharing; i++) {
+      bedSlots.push({
+        id: `bed_${room.id}_${i}`,
+        roomId: room.id,
+        bedIndex: i,
+      });
+    }
+  }
+
+  return bedSlots;
 }
 
 export function buildEbMeters(): EbMeter[] {
@@ -219,6 +241,7 @@ export function seedSampleState(): AppState {
   return {
     version: APP_STATE_VERSION,
     rooms,
+    bedSlots: buildInitialBedSlots(),
     members: [],
     maintenance: [],
     waterCans: buildWaterCans(),
@@ -268,6 +291,7 @@ export function emptyState(): AppState {
   return {
     version: APP_STATE_VERSION,
     rooms: buildRooms(),
+    bedSlots: buildInitialBedSlots(),
     members: [],
     maintenance: [],
     waterCans: [],

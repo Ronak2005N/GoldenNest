@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
-  BedDouble,
+  Bed,
   Download,
   Droplets,
   HardHat,
@@ -34,7 +34,7 @@ export type PageId =
 
 export const NAV_ITEMS: { id: PageId; label: string; short: string; icon: LucideIcon }[] = [
   { id: 'dashboard', label: 'Dashboard (Profit & Loss)', short: 'Dashboard', icon: LayoutDashboard },
-  { id: 'rooms', label: 'Rooms & Vacant Beds', short: 'Rooms', icon: BedDouble },
+  { id: 'rooms', label: 'Rooms & Vacant Beds', short: 'Rooms', icon: Bed },
   { id: 'members', label: 'Members (Boys & Gents)', short: 'Members', icon: Users },
   { id: 'rent', label: 'Rent & Defaulters', short: 'Rent', icon: Wallet },
   { id: 'water', label: 'Water Cans & Tankers', short: 'Water', icon: Droplets },

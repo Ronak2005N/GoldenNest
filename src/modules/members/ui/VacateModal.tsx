@@ -89,6 +89,11 @@ export function VacateModal({
               },
             ]
           : s.maintenance;
+      
+      // Update bed slot references - when a member vacates, their bed becomes free
+      // The bed slot remains in state.bedSlots, but the occupancy is determined by
+      // checking for active members, so no explicit "release" is needed
+      
       return { ...s, members, maintenance: maintenanceRows };
     });
     window.alert(

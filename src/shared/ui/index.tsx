@@ -1,6 +1,8 @@
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react';
 import { useEffect } from 'react';
+import type { ButtonHTMLAttributes, InputHTMLAttributes, SelectHTMLAttributes } from 'react';
 import { X } from 'lucide-react';
+// Import ReactNode for the prefix prop
+import * as React from 'react';
 
 /* ------------------------------------------------------------------ buttons */
 
@@ -39,11 +41,11 @@ export function Btn({ variant = 'primary', full, className = '', children, ...re
 
 /* -------------------------------------------------------------------- cards */
 
-export function Card({ className = '', children }: { className?: string; children: ReactNode }) {
+export function Card({ className = '', children }: { className?: string; children: React.ReactNode }) {
   return <div className={`card min-w-0 p-5 ${className}`}>{children}</div>;
 }
 
-export function SectionTitle({ children, className = '' }: { children: ReactNode; className?: string }) {
+export function SectionTitle({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return <h2 className={`headline ${className}`}>{children}</h2>;
 }
 
@@ -59,7 +61,7 @@ const BADGE_TONES: Record<BadgeTone, string> = {
   neutral: 'bg-ink/[0.05] text-ink border-ink/15',
 };
 
-export function Badge({ tone = 'neutral', children }: { tone?: BadgeTone; children: ReactNode }) {
+export function Badge({ tone = 'neutral', children }: { tone?: BadgeTone; children: React.ReactNode }) {
   return (
     <span
       className={`inline-flex min-h-[32px] items-center rounded-full border px-3 py-0.5 text-sm font-bold uppercase tracking-wide ${BADGE_TONES[tone]}`}
@@ -79,7 +81,7 @@ export function Stat({
 }: {
   label: string;
   value: string;
-  sub?: ReactNode;
+  sub?: React.ReactNode;
   tone?: 'ink' | 'good' | 'bad' | 'warn' | 'brand';
 }) {
   const toneClass =
@@ -115,7 +117,7 @@ export function Modal({
   title: string;
   subtitle?: string;
   onClose: () => void;
-  children: ReactNode;
+  children: React.ReactNode;
   wide?: boolean;
 }) {
   useEffect(() => {
@@ -173,7 +175,7 @@ export function Field({
   label: string;
   hint?: string;
   error?: string;
-  children: ReactNode;
+  children: React.ReactNode;
 }) {
   return (
     <label className="block">
@@ -188,9 +190,14 @@ export function Field({
 const INPUT_CLS =
   'w-full min-h-[54px] rounded-xl border border-line bg-white/80 px-4 text-base text-ink placeholder:text-slate-500 focus:border-brand focus:bg-white focus:outline-none';
 
-export function TextInput(props: InputHTMLAttributes<HTMLInputElement>) {
-  const { className = '', ...rest } = props;
-  return <input {...rest} className={`${INPUT_CLS} ${className}`} />;
+export function TextInput(props: InputHTMLAttributes<HTMLInputElement> & { prefix?: React.ReactNode }) {
+  const { className = '', prefix, ...rest } = props;
+  return (
+    <div className="relative">
+      {prefix}
+      <input {...rest} className={`${INPUT_CLS} ${prefix ? 'pl-10' : ''} ${className}`} />
+    </div>
+  );
 }
 
 export function SelectInput(props: SelectHTMLAttributes<HTMLSelectElement>) {
@@ -264,7 +271,7 @@ export function Tabs({
 
 /* -------------------------------------------------------------- empty state */
 
-export function EmptyState({ title, hint, action }: { title: string; hint?: string; action?: ReactNode }) {
+export function EmptyState({ title, hint, action }: { title: string; hint?: string; action?: React.ReactNode }) {
   return (
     <Card className="flex flex-col items-center gap-3 py-10 text-center">
       <p className="text-lg font-semibold">{title}</p>
@@ -284,11 +291,95 @@ export function PageIntro({ title, hint }: { title: string; hint?: string }) {
 }
 
 /** Small labelled row used inside detail cards. */
-export function InfoRow({ label, value }: { label: string; value: ReactNode }) {
+export function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-baseline justify-between gap-4 border-b border-line py-2 last:border-0">
       <span className="text-base text-slate-600">{label}</span>
       <span className="num-md text-right">{value}</span>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ drawer */
+
+export function Drawer({
+  open,
+  onClose,
+  title,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  children: React.ReactNode;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex">
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-ink/50"
+        onClick={onClose}
+        aria-label="Close drawer"
+      />
+      {/* Drawer panel */}
+      <div className="relative ml-auto h-screen w-full max-w-md overflow-y-auto rounded-l-[1.25rem] bg-white shadow-[0_4px_12px_-8px_rgb(15_23_42/0.35)]">
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-line bg-white/95 px-5 py-4 backdrop-blur-sm">
+          <h2 className="display text-lg">{title}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="press -mr-2 -mt-1 flex h-[48px] w-[48px] shrink-0 items-center justify-center rounded-xl text-slate-600 hover:bg-ink/[0.06]"
+          >
+            <X size={24} />
+          </button>
+        </div>
+        <div className="p-5">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- confirmation dialog */
+
+export interface ConfirmDialogProps {
+  open: boolean;
+  title: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  children: React.ReactNode;
+}
+
+export function ConfirmDialog({ open, title, onConfirm, onCancel, children }: ConfirmDialogProps) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/50">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="glass-panel flex w-full max-w-sm flex-col gap-4 rounded-xl border border-line bg-white p-6"
+      >
+        <h2 className="headline">{title}</h2>
+        {children}
+        <div className="flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="press inline-flex min-h-[54px] items-center gap-2 rounded-xl border border-line px-4 text-base font-semibold text-slate-600 hover:bg-ink/[0.06]"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="press inline-flex min-h-[54px] items-center justify-center gap-2 rounded-xl border border-bad/40 bg-bad/[0.08] px-5 text-base font-semibold text-bad hover:bg-bad/[0.15]"
+          >
+            Confirm
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -72,8 +72,8 @@ export function BulkMembersModal({ open, onClose }: { open: boolean; onClose: ()
   const fileRef = useRef<HTMLInputElement>(null);
 
   const index = useMemo(
-    () => buildRoomIndex(state.rooms, state.members),
-    [state.rooms, state.members],
+    () => buildRoomIndex(state.rooms, state.members, state.bedSlots),
+    [state.rooms, state.members, state.bedSlots],
   );
 
   const drafts = useMemo<DraftRow[]>(() => {
