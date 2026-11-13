@@ -4,9 +4,43 @@
  * Requires `npm run preview` on :4173.
  */
 import puppeteer from 'puppeteer-core';
+import * as XLSX from 'xlsx';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+
+/**
+ * Puts one extra member into a backup file, so an import really has something
+ * to merge (re-importing the app's own file would change nothing at all).
+ */
+function addMemberToBackup(sourcePath: string, outPath: string, name = 'Merged Kumar') {
+  const wb = XLSX.read(fs.readFileSync(sourcePath), { type: 'buffer' });
+  const sheet = wb.Sheets['Active_Members'];
+  const rows = sheet
+    ? (XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' }) as Record<string, unknown>[])
+    : [];
+  const template = rows[0] ?? ({} as Record<string, unknown>);
+  const row: Record<string, unknown> = { ...template };
+  row['Member ID'] = 'mem_ui_import_1';
+  row['Name'] = name;
+  row['Occupation'] = 'Student';
+  row['Mobile'] = '9845012345';
+  row['Government ID'] = '[Aadhaar Redacted]';
+  row['PG Branch'] = 'PG1';
+  row['Floor'] = 'Ground';
+  row['Room'] = 'G1';
+  row['Bed No'] = 1;
+  row['Start Date'] = '2026-11-01';
+  row['Monthly Rent (₹)'] = 6000;
+  row['Advance Amount (₹)'] = 0;
+  row['Rent Due (₹)'] = 6000;
+  row['Total Paid (₹)'] = 0;
+  row['Total Due (₹)'] = 6000;
+  row['Status'] = 'UNPAID';
+  rows.push(row);
+  wb.Sheets['Active_Members'] = XLSX.utils.json_to_sheet(rows);
+  fs.writeFileSync(outPath, XLSX.write(wb, { bookType: 'xlsx', type: 'buffer' }));
+}
 
 const BASE = 'http://localhost:4173';
 const EXECUTABLE = [
@@ -150,10 +184,15 @@ async function main() {
     check('a backup file was produced', !!file, fs.readdirSync(downloadDir).join(','));
 
     if (file) {
+      // Put one extra member into the file, so the import really has something
+      // to merge (re-importing the app's own file would change nothing).
+      const changed = path.join(downloadDir, 'with-a-new-member.xlsx');
+      addMemberToBackup(path.join(downloadDir, file), changed, 'Merged Kumar');
+
       const input = await page.$('input[type="file"]');
       check('the import file input is there', !!input);
       if (input) {
-        await input.uploadFile(path.join(downloadDir, file));
+        await input.uploadFile(changed);
         check('the preview is shown first', await waitForText(page, 'Check Before Importing'));
         check('the preview says nothing is deleted', await hasText(page, '0 will be deleted'));
         check('the preview mentions the safety promise', await hasText(page, 'Safe import'));
@@ -168,6 +207,7 @@ async function main() {
         );
         check('the member is still on the device', state.members?.some((m: any) => m.id === 'mem_safety_1'), true);
         check('no duplicate members', state.members?.filter((m: any) => m.id === 'mem_safety_1').length === 1, true);
+        check('the new member from the file was added', state.members?.some((m: any) => m.id === 'mem_ui_import_1'), true);
       }
     }
     fs.rmSync(downloadDir, { recursive: true, force: true });

@@ -254,6 +254,16 @@ export function seedSampleState(): AppState {
   };
 }
 
+/**
+ * A completely empty business — zero net profit, no members, nothing paid and
+ * nothing unpaid.
+ *
+ * This is what a brand-new device starts with and what the "Start From Zero"
+ * button leaves behind: the *setup* (rooms, EB meters, Wi-Fi connections, the
+ * can rate and the item buttons) is kept, every single rupee of real data is
+ * gone. The owner then feeds members and amounts in from the beginning, so the
+ * first month they record is the first month the app knows about.
+ */
 export function emptyState(): AppState {
   return {
     version: APP_STATE_VERSION,
@@ -271,7 +281,7 @@ export function emptyState(): AppState {
     staff: [],
     staffAdvances: [],
     staffPayouts: [],
-    wifi: [],
+    wifi: buildWifi(),
     wifiRecharges: [],
     provisionChips: [...DEFAULT_PROVISION_CHIPS],
     provisionExpenses: [],

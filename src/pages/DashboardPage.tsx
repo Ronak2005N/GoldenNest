@@ -149,10 +149,22 @@ export function DashboardPage() {
           }
         />
         <Stat
-          label="Total Refundable Advance Held"
-          value={money(pnl.advanceHeld)}
+          label="Total Liabilities & Advances Held"
+          value={money(pnl.liabilities.total)}
           tone="brand"
-          sub="Security deposits of all members currently staying"
+          sub={
+            pnl.liabilities.total > 0 ? (
+              <>
+                {money(pnl.liabilities.deposits)} security deposits
+                {pnl.liabilities.advanceRent > 0 ? ` · ${money(pnl.liabilities.advanceRent)} rent paid in advance` : ''}
+                {pnl.liabilities.staffAdvances > 0 ? ` · ${money(pnl.liabilities.staffAdvances)} staff advances` : ''}
+                <br />
+                Money in hand, not yet earned — not counted as profit
+              </>
+            ) : (
+              'No deposits, advance rent or staff advances are held'
+            )
+          }
         />
       </div>
 
@@ -231,6 +243,11 @@ export function DashboardPage() {
           {longDate(todayISO())}. Download an Excel backup regularly to move data between your laptop and
           phone.
         </p>
+        <p className="mt-2 text-base text-slate-600">
+          <strong>Starting fresh?</strong> “Start From Zero” clears every member, payment, pending
+          rupee and expense, so the profit begins at ₹0 and you feed the real numbers in from the
+          first day. Your rooms, EB meters and Wi-Fi connections stay exactly as they are.
+        </p>
         <div className="mt-4 flex flex-col gap-4">
           <ExcelSyncButtons variant="primary" />
           <div className="flex flex-wrap gap-3 border-t border-line pt-4">
@@ -246,11 +263,11 @@ function ResetButtons() {
   const { resetToSample, resetToEmpty } = useStore();
   return (
     <>
-      <Btn variant="secondary" onClick={resetToSample}>
-        Load Sample Data Again
-      </Btn>
       <Btn variant="danger" onClick={resetToEmpty}>
-        Reset to Empty (start real records)
+        Start From Zero (clear all members, payments &amp; expenses)
+      </Btn>
+      <Btn variant="secondary" onClick={resetToSample}>
+        Load Demo Data Again (sample rows to try the screens)
       </Btn>
     </>
   );

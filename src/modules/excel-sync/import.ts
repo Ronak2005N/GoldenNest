@@ -265,6 +265,13 @@ export function parseWorkbook(wb: XLSX.WorkBook): Partial<AppState> {
         if (!memberId) continue;
         const list = paymentsByMember.get(memberId) ?? [];
         const voidedRaw = dt(r['Voided On']);
+        // The PG the money was collected for. Files saved before this column
+        // existed leave it empty — those payments belong to the member's
+        // current PG, exactly as they always did.
+        const payBranch = str(r['PG Branch']).toUpperCase();
+        const branchOfPayment = BRANCH_IDS.includes(payBranch as BranchId)
+          ? (payBranch as BranchId)
+          : null;
         list.push({
           id: str(r['Payment ID']) || uid('pay'),
           date: dt(r['Date']) || '',
@@ -273,6 +280,7 @@ export function parseWorkbook(wb: XLSX.WorkBook): Partial<AppState> {
           upi: n(r['UPI (₹)']) || n(r['UPI']),
           card: n(r['Card (₹)']) || n(r['Card']),
           note: str(r['Note']) || undefined,
+          ...(branchOfPayment ? { branch: branchOfPayment } : {}),
           // A voided payment is kept in the record but counts for nothing.
           // Only a real date counts as voided — a broken cell must not
           // silently cancel a payment.

@@ -103,6 +103,9 @@ export function RecordPaymentModal({
       cash: c,
       upi: u,
       card: d,
+      // The PG the money was collected for, right now. If the member moves to
+      // another PG later, this month's income stays where it was earned.
+      branch: who.branch,
     };
     update((s) => ({
       ...s,

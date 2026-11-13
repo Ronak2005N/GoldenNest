@@ -42,6 +42,16 @@ export interface RentPayment {
   card: number;
   note?: string;
   /**
+   * The PG the money was collected for, at the moment it was collected.
+   *
+   * When a member moves from one PG to another, the rent they paid earlier
+   * must stay in the books of the PG where it was actually collected — the old
+   * PG's income cannot be moved to the new PG by a transfer. Records saved
+   * before this field existed have no branch: for them the member's current
+   * PG is used, exactly as before.
+   */
+  branch?: BranchId;
+  /**
    * Set when the owner reverses this payment.
    *
    * A voided payment is never deleted — it stays in the record as proof of

@@ -4,7 +4,7 @@ import { useStore } from '../app/store/StoreProvider';
 import { BRANCHES, BRANCH_MAP } from '../app/store/branches';
 import { monthLockMessage } from '../app/store/monthLock';
 import type { BranchId, EbBill, PaymentMode } from '../app/store/types';
-import { ebOutstanding, ebServiceMonth, ebStatus, unpaidEbBills } from '../app/store/selectors';
+import { ebBillMonths, ebOutstanding, ebServiceMonth, ebStatus, unpaidEbBills } from '../app/store/selectors';
 import { currentMonthKey, longDate, monthKey, monthLabel, todayISO, addMonths, dueStatus, lastMonths } from '../shared/lib/dates';
 import { money, uid } from '../shared/lib/format';
 import { Badge, Btn, Card, EmptyState, Field, Modal, MoneyInput, PageIntro, SelectInput, Tabs, TextInput } from '../shared/ui';
@@ -126,6 +126,9 @@ function EbTab() {
                           bills.slice(0, 4).map((bill) => {
                             const status = ebStatus(bill);
                             const owed = ebOutstanding(bill);
+                            // A bill that covers two months is shared over them, so
+                            // the owner can see where the cost actually landed.
+                            const covered = ebBillMonths(state, bill);
                             return (
                               <div key={bill.id} className="well px-3 py-2">
                                 <div className="flex items-center justify-between gap-2">
@@ -139,7 +142,14 @@ function EbTab() {
                                           : 'NOT PAID YET'}
                                     </p>
                                     <p className="text-base text-slate-600">
-                                      Bill for {monthLabel(ebServiceMonth(bill))}
+                                      {covered.length > 1 ? (
+                                        <>
+                                          {money(bill.amount / covered.length)} each for{' '}
+                                          {covered.map((m) => monthLabel(m)).join(' and ')}
+                                        </>
+                                      ) : (
+                                        <>Bill for {monthLabel(ebServiceMonth(bill))}</>
+                                      )}
                                     </p>
                                   </div>
                                   <span className="num-md">{money(bill.amount)}</span>

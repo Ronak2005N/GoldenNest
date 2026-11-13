@@ -3,7 +3,8 @@ import { Droplets, Plus, Truck } from 'lucide-react';
 import { useStore } from '../app/store/StoreProvider';
 import { BRANCHES, BRANCH_MAP } from '../app/store/branches';
 import { monthLockMessage } from '../app/store/monthLock';
-import type { AppState, BranchId, PaymentMode } from '../app/store/types';
+import { canSettlementStatus } from '../app/store/selectors';
+import type { BranchId, PaymentMode } from '../app/store/types';
 import { currentMonthKey, longDate, monthKey, monthLabel, todayISO } from '../shared/lib/dates';
 import { money, uid } from '../shared/lib/format';
 import { Badge, Btn, Card, EmptyState, Field, InfoRow, Modal, MoneyInput, PageIntro, SelectInput, Tabs, TextInput } from '../shared/ui';
@@ -42,20 +43,8 @@ export function WaterPage() {
 /**
  * The month-end can bill is settled per PG. A settlement saved before this
  * existed carries no PG on it and is treated as covering every PG, so old
- * records keep working.
+ * records keep working. (See `canSettlementStatus` in the store selectors.)
  */
-function settlementFor(
-  settlements: AppState['canSettlements'],
-  monthKeyVal: string,
-  branchId: BranchId,
-) {
-  return (
-    settlements.find((s) => s.monthKey === monthKeyVal && s.branch === branchId) ??
-    settlements.find((s) => s.monthKey === monthKeyVal && !s.branch) ??
-    null
-  );
-}
-
 function CansTab() {
   const { state, update, branch } = useStore();
   const key = currentMonthKey();
@@ -73,18 +62,12 @@ function CansTab() {
   const totalCans = logs.reduce((n, c) => n + c.count, 0);
   const bill = totalCans * state.canRate;
 
-  const perBranch = scopes.map((b) => {
-    const cans = state.waterCans
-      .filter((c) => c.branch === b && monthKey(c.date) === key)
-      .reduce((n, c) => n + c.count, 0);
-    return {
-      branch: b,
-      cans,
-      bill: cans * state.canRate,
-      settlement: settlementFor(state.canSettlements, key, b),
-    };
-  });
-  const allSettled = perBranch.every((p) => p.cans === 0 || p.settlement);
+  const perBranch = scopes.map((b) => ({ branch: b, ...canSettlementStatus(state, b, key) }));
+  // A PG that paid only part of its bill has NOT paid: the badge must never
+  // say PAID while money is still owed.
+  const allPaid = perBranch.every((p) => p.cans === 0 || p.due === 0);
+  const anyPartPaid = perBranch.some((p) => p.status === 'partial');
+  const outstanding = perBranch.reduce((n, p) => n + p.due, 0);
 
   function saveCans() {
     const n = Number(count);
@@ -131,17 +114,19 @@ function CansTab() {
           <p className="num-xl mt-1 text-brand">{money(bill)}</p>
           <p className="text-base text-slate-600">{totalCans} cans × {money(state.canRate)}</p>
         </Card>
-        <Card className={allSettled ? 'border-good/30' : 'border-warn/30'}>
+        <Card className={allPaid ? 'border-good/30' : 'border-warn/30'}>
           <p className="text-base font-semibold text-slate-600">Vendor settlement</p>
           <div className="mt-2">
-            <Badge tone={allSettled ? 'good' : 'warn'}>
-              {allSettled ? 'ALL PAID' : 'NOT YET PAID'}
+            <Badge tone={allPaid ? 'good' : 'warn'}>
+              {allPaid ? 'ALL PAID' : anyPartPaid ? 'PART PAID' : 'NOT YET PAID'}
             </Badge>
           </div>
           <p className="mt-2 text-base text-slate-600">
-            {allSettled
-              ? 'Every PG with cans this month has been settled.'
-              : 'Pay each PG separately — a bill belongs to one PG at a time.'}
+            {allPaid
+              ? 'Every PG with cans this month has been settled in full.'
+              : anyPartPaid
+                ? `Part paid — ${money(outstanding)} is still owed to the vendor.`
+                : 'Pay each PG separately — a bill belongs to one PG at a time.'}
           </p>
         </Card>
       </div>
@@ -150,14 +135,19 @@ function CansTab() {
         <h2 className="headline mb-3">Month-end bill for each PG</h2>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {perBranch.map((p) => {
-            const paidAmount = p.settlement
-              ? p.settlement.cash + p.settlement.upi + p.settlement.card
-              : 0;
-            const partPaid = !!p.settlement && paidAmount < p.bill;
+            const paidAmount = p.paid;
+            const partPaid = p.status === 'partial';
+            const badge = p.cans === 0
+              ? { tone: 'neutral' as const, label: 'NO CANS' }
+              : p.status === 'paid'
+                ? { tone: 'good' as const, label: 'PAID' }
+                : partPaid
+                  ? { tone: 'warn' as const, label: 'PART PAID' }
+                  : { tone: 'warn' as const, label: 'NOT PAID' };
             return (
             <Card
               key={p.branch}
-              className={p.settlement && !partPaid ? 'border-good/30' : 'border-warn/30'}
+              className={p.status === 'paid' && p.cans > 0 ? 'border-good/30' : 'border-warn/30'}
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -166,9 +156,7 @@ function CansTab() {
                     {p.cans} cans × {money(state.canRate)} · {monthLabel(key)}
                   </p>
                 </div>
-                <Badge tone={p.settlement && !partPaid ? 'good' : 'warn'}>
-                  {p.settlement ? (partPaid ? 'PART PAID' : 'PAID') : 'NOT PAID'}
-                </Badge>
+                <Badge tone={badge.tone}>{badge.label}</Badge>
               </div>
               <p className="num-xl mt-2 text-brand">{money(p.bill)}</p>
               {p.settlement ? (
@@ -178,7 +166,7 @@ function CansTab() {
               ) : null}
               {partPaid ? (
                 <p className="mt-1 text-base font-semibold text-warn">
-                  {money(p.bill - paidAmount)} is still owed to the vendor
+                  {money(p.due)} is still owed to the vendor
                 </p>
               ) : null}
               <div className="mt-3">

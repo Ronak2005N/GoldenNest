@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import type { AppState, BranchFilter } from './types';
 import { emptyState, seedSampleState } from './seed';
 import { migrateState } from './migrate';
+import { zeroedState } from './zero';
 import { RecoveryScreen } from './RecoveryScreen';
 
 const STATE_KEY = 'golden-nest-state-v2';
@@ -20,10 +21,12 @@ interface Boot {
 /**
  * Reads the saved data.
  *
- * If there is no saved file at all, this is a brand new device and the sample
- * data is loaded. If a saved file exists but cannot be read, the app **stops**
- * — it must never quietly replace the owner's records with sample data, and it
- * must never overwrite the damaged file either.
+ * If there is no saved file at all, this is a brand new device and it starts
+ * **completely empty** — zero net profit, no members, nothing paid, nothing
+ * unpaid — so the owner can feed the real numbers in from the beginning.
+ * If a saved file exists but cannot be read, the app **stops** — it must never
+ * quietly replace the owner's records with sample data, and it must never
+ * overwrite the damaged file either.
  */
 function loadState(): Boot {
   let raw: string | null = null;
@@ -31,25 +34,25 @@ function loadState(): Boot {
     raw = localStorage.getItem(STATE_KEY);
   } catch {
     // Storage is not readable at all (private mode, blocked cookies). There is
-    // no saved file to lose, so the app starts fresh.
-    return { state: migrateState(seedSampleState()), corrupted: false, damaged: '' };
+    // no saved file to lose, so the app starts empty.
+    return { state: migrateState(emptyState()), corrupted: false, damaged: '' };
   }
 
   if (!raw) {
-    // A brand new device — nothing to lose.
-    return { state: migrateState(seedSampleState()), corrupted: false, damaged: '' };
+    // A brand new device — nothing to lose, and nothing made up either.
+    return { state: migrateState(emptyState()), corrupted: false, damaged: '' };
   }
 
   try {
     const parsed = JSON.parse(raw) as AppState;
     if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.rooms) || !Array.isArray(parsed.members)) {
       // The file is there but it is not the data we saved — treat it as damaged.
-      return { state: migrateState(seedSampleState()), corrupted: true, damaged: raw };
+      return { state: migrateState(emptyState()), corrupted: true, damaged: raw };
     }
     return { state: migrateState(parsed), corrupted: false, damaged: '' };
   } catch {
     // The file is damaged. Stop here instead of hiding it behind sample data.
-    return { state: migrateState(seedSampleState()), corrupted: true, damaged: raw };
+    return { state: migrateState(emptyState()), corrupted: true, damaged: raw };
   }
 }
 
@@ -125,18 +128,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const replaceState = useCallback((next: AppState) => setState(next), []);
 
   const resetToSample = useCallback(() => {
-    if (window.confirm('Load the sample data again? This replaces everything currently saved.')) {
+    if (
+      window.confirm(
+        'Load the demo data again? It adds sample water, EB, lease, catering and provision rows so you can see how the screens behave. This replaces everything currently saved.',
+      )
+    ) {
       setState(migrateState(seedSampleState()));
     }
   }, []);
 
+  /**
+   * Starts the business from zero.
+   *
+   * Every rupee of real data goes: members, left-PG members, payments, rent
+   * arrears, staff, water, EB bills, lease, catering, Wi-Fi recharges,
+   * provisions, supplier credit and closed months. Only the *setup* survives —
+   * the rooms, the EB meters, the Wi-Fi connections, the can rate and the item
+   * buttons — so the app is ready to use at once and the profit starts at ₹0.
+   */
   const resetToEmpty = useCallback(() => {
     if (
       window.confirm(
-        'Start with empty data? Members, payments and expenses will be cleared. Rooms, EB meters and Wi-Fi connections stay. This cannot be undone — download an Excel backup first if unsure.',
+        'Start from zero?\n\nThis will clear EVERYTHING: members, left-PG members, all payments, pending rent, staff, water cans, EB bills, lease, catering, Wi-Fi recharges and provisions.\n\nYour rooms, EB meters, Wi-Fi connections and item buttons will stay.\n\nThis cannot be undone — download an Excel backup first if you want to keep a copy.',
       )
     ) {
-      setState(migrateState(emptyState()));
+      setState((prev) => zeroedState(prev));
     }
   }, []);
 

@@ -1,6 +1,6 @@
 import type { AppState, BranchFilter, BranchId, ExpenseCategory, Member } from './types';
 import { rentPosition } from '../../entities/member';
-import { monthEndISO, monthKey, monthStartISO, todayISO } from '../../shared/lib/dates';
+import { currentMonthKey, monthEndISO, monthKey, monthStartISO, todayISO } from '../../shared/lib/dates';
 
 function inBranch<T extends { branch: string }>(rows: T[], branch: BranchFilter): T[] {
   return branch === 'ALL' ? rows : rows.filter((r) => r.branch === branch);
@@ -243,6 +243,12 @@ export interface StaffLedgerRow {
   advanceCarried: number;
   /** The whole advance applied against this month's salary (carried + this month). */
   advanceDeducted: number;
+  /**
+   * Money this person is still holding: an advance that was bigger than the
+   * salary it was meant for. It is cash that has left the bank but has not
+   * been earned yet, so it is a liability of the PG, not an expense.
+   */
+  advanceHeld: number;
   paid: number;
   /** What is still to be paid. */
   remaining: number;
@@ -334,6 +340,9 @@ export function staffLedgers(
         advances,
         advanceCarried,
         advanceDeducted,
+        // What this person is still holding after this month's salary has
+        // absorbed what it can.
+        advanceHeld: held,
         paid,
         remaining,
       };
@@ -385,6 +394,55 @@ export function allocateShared(state: AppState, amount: number): Record<BranchId
 
 export function refundableAdvanceHeld(state: AppState, branch: BranchFilter): number {
   return activeMembers(state, branch).reduce((n, m) => n + (m.advance?.amount ?? 0), 0);
+}
+
+export interface LiabilitiesBreakdown {
+  /** Members' security deposits — refundable when they leave. */
+  deposits: number;
+  /** Rent received from members in advance: money in hand, not yet earned. */
+  advanceRent: number;
+  /** Money given to staff that their salary has not taken back yet. */
+  staffAdvances: number;
+  /** Everything the PG holds on someone else's behalf. */
+  total: number;
+}
+
+/**
+ * Everything the PG holds that is not its own income yet.
+ *
+ * Three kinds of money sit in the PG's hands:
+ * - the **security deposits** of the members living there,
+ * - the **rent received in advance** from members who have paid for a month
+ *   that has not been lived in yet (or paid more than they owe),
+ * - the **advances given to staff** that their salary has not taken back.
+ *
+ * The first two are money the PG owes back; the third is money the staff owes
+ * back. All of them are liabilities — cash that is in hand but is not earned,
+ * so it must never be counted as profit.
+ */
+export function liabilities(state: AppState, branch: BranchFilter): LiabilitiesBreakdown {
+  const deposits = refundableAdvanceHeld(state, branch);
+
+  // Rent paid in advance: the extra money carried forward, and money already
+  // paid for a month that has not started yet.
+  let advanceRent = 0;
+  for (const m of activeMembers(state, branch)) {
+    const pos = rentPosition(m);
+    advanceRent += pos.credit + pos.prepaid;
+  }
+
+  // Advances given to staff that their salary has not recovered yet.
+  const staffAdvances = staffLedgers(state, branch, currentMonthKey()).reduce(
+    (n, r) => n + r.advanceHeld,
+    0,
+  );
+
+  return {
+    deposits,
+    advanceRent,
+    staffAdvances,
+    total: deposits + advanceRent + staffAdvances,
+  };
 }
 
 /* ------------------------------------------------------------------------------------
@@ -460,6 +518,99 @@ export function unpaidWaterBills(
     }
   }
   return { total, count };
+}
+
+/** How a PG's can bill for a month stands with the vendor. */
+export type CanSettlementStatus = 'paid' | 'partial' | 'unpaid';
+
+/**
+ * The settlement status of one PG's can bill for a month.
+ *
+ * A PG that has paid only part of its bill has **not** paid: the badge must
+ * say PART PAID, never PAID, while money is still owed to the vendor. The
+ * three states are kept apart here so the page and the tests agree.
+ *
+ * Settlements saved before the PG was recorded carry no PG on them and are
+ * treated as covering every PG, so old records keep working.
+ */
+export function canSettlementStatus(
+  state: AppState,
+  branch: BranchId,
+  key: string,
+): {
+  status: CanSettlementStatus;
+  cans: number;
+  bill: number;
+  paid: number;
+  /** What is still owed to the vendor for this PG. */
+  due: number;
+  settlement: AppState['canSettlements'][number] | null;
+} {
+  const cans = state.waterCans
+    .filter((c) => c.branch === branch && monthKey(c.date) === key)
+    .reduce((n, c) => n + c.count, 0);
+  const bill = cans * state.canRate;
+  const settlement =
+    state.canSettlements.find((s) => s.monthKey === key && s.branch === branch) ??
+    state.canSettlements.find((s) => s.monthKey === key && !s.branch) ??
+    null;
+  const paid = settlement ? settlement.cash + settlement.upi + settlement.card : 0;
+  const due = Math.max(0, bill - paid);
+  const status: CanSettlementStatus =
+    bill === 0 || due === 0 ? 'paid' : paid > 0 ? 'partial' : 'unpaid';
+  return { status, cans, bill, paid, due, settlement };
+}
+
+/** The month before the given one (yyyy-mm). */
+export function previousMonthKey(key: string): string {
+  const [y, m] = key.split('-').map(Number);
+  const d = new Date(y, m - 2, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/**
+ * The months an electricity bill covers, oldest first.
+ *
+ * A meter that bills every two months sends one bill for two months of power
+ * used. The bill's service month is the **last** month of that period, so the
+ * cost is shared evenly over the period: a two-month bill must not land
+ * entirely in one month and make that month look twice as expensive (and the
+ * other month look free).
+ *
+ * Bills saved before service months existed keep the month they were paid in
+ * as the last month of the period — the old behaviour, only now shared out.
+ */
+export function ebBillMonths(state: AppState, bill: AppState['ebBills'][number]): string[] {
+  const meter = state.ebMeters.find((m) => m.id === bill.meterId);
+  const months = Math.max(1, meter?.cycleMonths ?? 2);
+  const end = ebServiceMonth(bill);
+  const out: string[] = [];
+  let key = end;
+  for (let i = 0; i < months; i += 1) {
+    out.unshift(key);
+    key = previousMonthKey(key);
+  }
+  return out;
+}
+
+/**
+ * The part of an electricity bill that belongs to one month.
+ *
+ * The whole bill is always shared out: the shares add up to exactly the bill
+ * amount, so no rupee is lost or invented.
+ */
+export function ebBillShare(
+  state: AppState,
+  bill: AppState['ebBills'][number],
+  month: string,
+): number {
+  const months = ebBillMonths(state, bill);
+  const index = months.indexOf(month);
+  if (index < 0) return 0;
+  const base = Math.floor(bill.amount / months.length);
+  const remainder = bill.amount - base * months.length;
+  // The odd rupee goes to the earliest months, so the shares always add up.
+  return base + (index < remainder ? 1 : 0);
 }
 
 /**
@@ -581,6 +732,11 @@ export function unpaidProvisionCredit(state: AppState, branch: BranchFilter): nu
  * never erase rent that was already collected, otherwise the profit and loss
  * of a past month silently changes the day somebody moves out.
  *
+ * The money belongs to the PG it was collected for, too. A payment carries the
+ * PG it was taken in, so moving a member from PG1 to PG2 never drags PG1's
+ * earlier income into PG2's books. Payments recorded before that was kept
+ * belong to the member's current PG — the same as before.
+ *
  * Payments the owner has voided are skipped: reversed money was never received.
  */
 export function rentCollected(
@@ -591,16 +747,19 @@ export function rentCollected(
   let cash = 0;
   let upi = 0;
   let card = 0;
-  for (const m of inBranch(state.members, branch)) {
+  for (const m of state.members) {
     for (const p of m.payments) {
       // A voided payment is money that was never received: it counts for
       // nothing, in every month, for ever.
       if (p.voidedAt) continue;
-      if (monthKey(p.date) === key) {
-        cash += p.cash;
-        upi += p.upi;
-        card += p.card;
-      }
+      if (monthKey(p.date) !== key) continue;
+      // The PG the money was collected for. Older payments have no branch of
+      // their own — they belong to the member's current PG.
+      const owner = p.branch ?? m.branch;
+      if (branch !== 'ALL' && owner !== branch) continue;
+      cash += p.cash;
+      upi += p.upi;
+      card += p.card;
     }
   }
   return { total: cash + upi + card, cash, upi, card };
@@ -640,10 +799,11 @@ export function expensesFor(state: AppState, branch: BranchFilter, key: string):
     if (l.monthKey === key) byCategory['Owner Lease'] += l.amount;
   }
   for (const b of inBranch(state.ebBills, branch)) {
-    // Electricity is accrued in the month the power was used, whether or not
-    // the bill has been paid yet. Bills saved before service months existed
-    // keep the month they were paid in.
-    if (ebServiceMonth(b) === key) byCategory['EB Electricity'] += b.amount;
+    // Electricity is accrued over the months the power was used, whether or not
+    // the bill has been paid yet. A bill that covers two months is shared over
+    // its two months, so no single month carries the whole cost.
+    const share = ebBillShare(state, b, key);
+    if (share) byCategory['EB Electricity'] += share;
   }
   // Water: the cash actually paid to the can vendor in this month. The bill
   // is accrued from the cans delivered; the money leaves the bank when the
@@ -729,6 +889,8 @@ export interface PnL {
   unpaidWater: number;
   /** Goods bought on credit that have not been paid to the supplier yet. */
   unpaidProvisionCredit: number;
+  /** Everything the PG holds but has not earned: deposits, advance rent, staff advances. */
+  liabilities: LiabilitiesBreakdown;
 }
 
 /**
@@ -753,6 +915,7 @@ export function pnlFor(state: AppState, branch: BranchFilter, key: string, today
   const eb = unpaidEbBills(state, branch, key);
   const water = unpaidWaterBills(state, branch, key);
   const credit = unpaidProvisionCredit(state, branch);
+  const owed = liabilities(state, branch);
   return {
     revenue: rent.total + maintenance,
     rent,
@@ -762,7 +925,8 @@ export function pnlFor(state: AppState, branch: BranchFilter, key: string, today
     pendingRentLeft: owing.left,
     expenses,
     net: rent.total + maintenance - expenses.total,
-    advanceHeld: refundableAdvanceHeld(state, branch),
+    advanceHeld: owed.deposits,
+    liabilities: owed,
     unpaidEb: eb.total,
     unpaidEbCount: eb.count,
     unpaidWater: water.total,

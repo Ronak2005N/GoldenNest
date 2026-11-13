@@ -6,12 +6,46 @@
  * Run: npx tsx scripts/ui-smoke.ts   (requires `npm run preview` on :4173)
  */
 import puppeteer from 'puppeteer-core';
+import * as XLSX from 'xlsx';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
 const BASE = 'http://localhost:4173';
 const PAGES = ['dashboard', 'rooms', 'members', 'rent', 'water', 'eb', 'staff', 'wifi', 'provisions'];
+
+/**
+ * Puts one extra member into a backup file, so an import really has something
+ * to do (re-importing the app's own file would change nothing at all).
+ */
+function addMemberToBackup(sourcePath: string, outPath: string, name = 'Imported Kumar') {
+  const wb = XLSX.read(fs.readFileSync(sourcePath), { type: 'buffer' });
+  const sheet = wb.Sheets['Active_Members'];
+  const rows = sheet
+    ? (XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' }) as Record<string, unknown>[])
+    : [];
+  const template = rows[0] ?? ({} as Record<string, unknown>);
+  const row: Record<string, unknown> = { ...template };
+  row['Member ID'] = 'mem_ui_import_1';
+  row['Name'] = name;
+  row['Occupation'] = 'Student';
+  row['Mobile'] = '9845012345';
+  row['Government ID'] = '[Aadhaar Redacted]';
+  row['PG Branch'] = 'PG1';
+  row['Floor'] = 'Ground';
+  row['Room'] = 'G1';
+  row['Bed No'] = 1;
+  row['Start Date'] = '2026-11-01';
+  row['Monthly Rent (₹)'] = 6000;
+  row['Advance Amount (₹)'] = 0;
+  row['Rent Due (₹)'] = 6000;
+  row['Total Paid (₹)'] = 0;
+  row['Total Due (₹)'] = 6000;
+  row['Status'] = 'UNPAID';
+  rows.push(row);
+  wb.Sheets['Active_Members'] = XLSX.utils.json_to_sheet(rows);
+  fs.writeFileSync(outPath, XLSX.write(wb, { bookType: 'xlsx', type: 'buffer' }));
+}
 
 const EDGE_CANDIDATES = [
   'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
@@ -303,11 +337,16 @@ async function main() {
       const size = fs.statSync(path.join(downloadDir, file)).size;
       check('downloaded file is non-trivial', size > 40000, String(size));
 
+      // Add one member to the file so the import really has something to do
+      // (re-importing the app's own file would change nothing at all).
+      const changed = path.join(downloadDir, 'with-a-new-member.xlsx');
+      addMemberToBackup(path.join(downloadDir, file), changed);
+
       const input = await page.$('input[type="file"]');
       if (!input) {
         check('file input present for import', false);
       } else {
-        await input.uploadFile(path.join(downloadDir, file));
+        await input.uploadFile(changed);
         // The import now shows a preview before it changes anything.
         const previewShown = await waitFor(
           () => hasText(page, 'Check Before Importing'),
@@ -322,6 +361,10 @@ async function main() {
           'the preview promises zero deletions',
           await hasText(page, '0 will be deleted'),
         );
+        check(
+          'the preview says what will be added',
+          await hasText(page, '+1 new'),
+        );
         await clickByText(page, 'button', 'Confirm Import');
         const imported = await waitFor(() =>
           dialogLog(page).some((m) => m.includes('Import complete')),
@@ -331,13 +374,19 @@ async function main() {
         await sleep(300);
         check(
           'import summary names the loaded counts',
-          dialogLog(page).some((m) => m.includes('Import complete') && m.includes('0 members')),
+          dialogLog(page).some((m) => m.includes('Import complete') && m.includes('1 members')),
           dialogLog(page).join(' | '),
         );
         check(
           'import summary says nothing was deleted',
           dialogLog(page).some((m) => m.includes('0 deleted')),
           dialogLog(page).join(' | '),
+        );
+        await page.goto(`${BASE}/?page=members`, { waitUntil: 'networkidle0' });
+        await sleep(700);
+        check(
+          'the imported member is on the device',
+          await hasText(page, 'Imported Kumar'),
         );
       }
     }
@@ -381,6 +430,71 @@ async function main() {
     await sleep(400);
     check('bulk imported member appears in the list', await hasText(page, 'Bulk One'));
     check('bulk skipped row was not imported', !(await hasText(page, 'Bad Room')));
+    await page.close();
+  }
+
+  // ---------- 8. water: a part-paid can bill says PART PAID, never PAID ----------
+  {
+    const page = await fresh(browser, 'water');
+    // Log some cans for this month so there is a bill to settle.
+    await clickByText(page, 'button', '+10 Cans');
+    await clickByText(page, 'button', "Save Today's Cans");
+    await sleep(400);
+    check('cans were logged', await hasText(page, 'Cans delivered this month'));
+
+    // Pay only part of the bill.
+    const opened = await clickByText(page, 'button', 'as PAID');
+    check('the settlement modal opens', await waitForText(page, 'Month-End Water Can Settlement'));
+    const moneyInputs = await page.$$('[role="dialog"] input');
+    if (moneyInputs.length) {
+      await moneyInputs[0].type('20');
+    }
+    await clickByText(page, 'button', 'Mark as PAID');
+    await sleep(500);
+    check('the part payment was saved', dialogLog(page).some((m) => m.includes('marked as PAID')));
+
+    const waterText = await page.evaluate(() => document.body.innerText);
+    check('the badge says PART PAID', waterText.includes('PART PAID'), waterText.slice(0, 200));
+    check('the badge does not say plain PAID', !/^PAID$/m.test(waterText), waterText.slice(0, 200));
+    check('the rest of the bill is still owed', waterText.includes('is still owed to the vendor'));
+    await page.close();
+  }
+
+  // ---------- 9. dashboard: the liability card covers deposits, advance rent and staff ----------
+  {
+    const page = await fresh(browser, 'dashboard');
+    check(
+      'the dashboard shows the total liabilities card',
+      await hasText(page, 'Total Liabilities & Advances Held'),
+    );
+    check(
+      'the empty state is explained',
+      await hasText(page, 'No deposits, advance rent or staff advances are held'),
+    );
+
+    // Admit a member with a security deposit so the card has something to show.
+    await page.goto(`${BASE}/?page=rooms`, { waitUntil: 'networkidle0' });
+    await sleep(300);
+    await clickByAriaLabel(page, 'tap to admit');
+    await waitForText(page, 'Add New Member');
+    await page.type('input[placeholder="Type the full name"]', 'Liability Test');
+    await page.type('input[placeholder="98450 12345"]', '9845012401');
+    const numbers = await page.$$('[role="dialog"] input[type="number"]');
+    if (numbers.length > 1) await numbers[0].type('8500');
+    if (numbers.length > 1) await numbers[1].type('4000'); // the security deposit
+    await clickByText(page, 'button', 'Save Member & Assign Bed');
+    await sleep(600);
+
+    await page.goto(`${BASE}/?page=dashboard`, { waitUntil: 'networkidle0' });
+    await sleep(400);
+    check(
+      'the security deposit is on the liability card',
+      await hasText(page, 'security deposits'),
+    );
+    check(
+      'it says the money is not profit yet',
+      await hasText(page, 'not counted as profit'),
+    );
     await page.close();
   }
 

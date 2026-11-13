@@ -12,6 +12,8 @@
     "test:p2": "tsx scripts/test-p2-fixes.ts",
     "test:p3": "tsx scripts/test-p3-fixes.ts",
     "test:p4": "tsx scripts/test-p4-fixes.ts",
+    "test:p5": "tsx scripts/test-p5-fixes.ts",
+    "test:zero": "tsx scripts/test-zero-start.ts",
     "test:ops": "tsx scripts/test-ops-fixes.ts",
     "test:safety": "tsx scripts/test-safety-fixes.ts",
     "test:rent": "tsx scripts/test-rent-cycle.ts",

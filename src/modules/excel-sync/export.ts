@@ -44,6 +44,10 @@ export function buildWorkbook(state: AppState): XLSX.WorkBook {
       ...Object.entries(pnl.expenses.byCategory).map(([k, v]) => [`  ${k}`, v] as [string, number]),
       ['NET PROFIT / LOSS', pnl.net],
       ['Total Refundable Advance Held', pnl.advanceHeld],
+      ['Total Liabilities & Advances Held', pnl.liabilities.total],
+      ['  Security Deposits (Refundable)', pnl.liabilities.deposits],
+      ['  Advance Rent Credits', pnl.liabilities.advanceRent],
+      ['  Unrecovered Staff Advances', pnl.liabilities.staffAdvances],
       ['Unpaid Electricity Bills (₹)', pnl.unpaidEb],
       ['Unpaid Water Can Bill (₹)', pnl.unpaidWater],
       ['Unpaid Provision Credit (₹)', pnl.unpaidProvisionCredit],
@@ -200,17 +204,23 @@ export function buildWorkbook(state: AppState): XLSX.WorkBook {
 
   // ——— supporting sheets (full-fidelity restore) ———
   const payRows: (string | number)[][] = [
-    ['Payment ID', 'Member ID', 'Member Name', 'Date', 'Cycle Key', 'Cash (₹)', 'UPI (₹)', 'Card (₹)', 'Note', 'Voided On', 'Void Reason'],
+    [
+      'Payment ID', 'Member ID', 'Member Name', 'Date', 'Cycle Key',
+      'Cash (₹)', 'UPI (₹)', 'Card (₹)', 'Note', 'Voided On', 'Void Reason', 'PG Branch',
+    ],
   ];
   for (const m of state.members) {
     for (const p of m.payments) {
       payRows.push([
         p.id, m.id, m.name, p.date, p.cycleKey, p.cash, p.upi, p.card, p.note ?? '',
         p.voidedAt ?? '', p.voidReason ?? '',
+        // The PG the money was collected for. Empty for payments recorded
+        // before this was kept — those belong to the member's current PG.
+        p.branch ?? '',
       ]);
     }
   }
-  sheet(wb, 'Rent_Payments', payRows, [18, 16, 20, 12, 14, 12, 12, 12, 24, 13, 26]);
+  sheet(wb, 'Rent_Payments', payRows, [18, 16, 20, 12, 14, 12, 12, 12, 24, 13, 26, 11]);
 
   const meterRows: (string | number)[][] = [
     ['Meter ID', 'PG Branch', 'Meter Label', 'Consumer No', 'Bill Cycle (Months)', 'Next Bill Due Date'],

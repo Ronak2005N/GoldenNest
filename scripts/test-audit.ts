@@ -7,7 +7,7 @@
  */
 import fs from 'node:fs';
 import { rentPosition, payableCycles, currentCycle } from '../src/entities/member/rent';
-import { expensesFor, pnlFor, activeMembers, defaulters } from '../src/app/store/selectors';
+import { expensesFor, pnlFor, activeMembers, defaulters, canSettlementStatus } from '../src/app/store/selectors';
 import { buildWorkbook } from '../src/modules/excel-sync/export';
 import { applyWorkbook } from '../src/modules/excel-sync/import';
 import { loadXlsx } from '../src/modules/excel-sync/xlsx-lazy';
@@ -144,14 +144,11 @@ console.log('\n=== A5. A part payment of the water bill still says PAID ===');
       { id: 'c1', monthKey: '2026-11', branch: 'PG1' as BranchId, date: '2026-11-20', cash: 500, upi: 0, card: 0 },
     ],
   };
-  const anySettlement = withSharedHas(withPartial, 'PG1');
-  function withSharedHas(s: AppState, b: BranchId) {
-    return s.canSettlements.some((x) => x.monthKey === '2026-11' && x.branch === b);
-  }
-  repro(
+  const status = canSettlementStatus(withPartial, 'PG1', '2026-11');
+  guard(
     'paying only 500 against a 3000 can bill still marks PG1 as PAID',
-    anySettlement,
-    'the screen shows PAID for any settlement, full or part',
+    status.status === 'paid',
+    `the badge now says ${status.status}, and ${status.due} is still owed`,
   );
 }
 
@@ -278,10 +275,10 @@ console.log('\n=== A16. Advance rent held is not shown as money the PG owes back
   const withMember: AppState = { ...state, members: [m] };
   const pnl = pnlFor(withMember, 'ALL', '2026-10');
   const pos = rentPosition(m, '2026-10-25');
-  repro(
+  guard(
     '2000 of advance rent is held but the dashboard liability shows only the security deposit',
-    pos.credit === 2000 && pnl.advanceHeld === 0,
-    `member credit=${pos.credit}, dashboard advanceHeld=${pnl.advanceHeld}`,
+    pos.credit === 2000 && pnl.liabilities.advanceRent !== 2000,
+    `member credit=${pos.credit}, dashboard advance rent=${pnl.liabilities.advanceRent}, total liabilities=${pnl.liabilities.total}`,
   );
 }
 

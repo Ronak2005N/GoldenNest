@@ -113,8 +113,12 @@ console.log('\n=== GND-27. An electricity bill that is not paid is still a liabi
   check('it belongs to the month the power was used', ebServiceMonth(unpaid), '2026-11');
 
   const state: AppState = { ...seedSampleState(), ebBills: [unpaid] };
-  check('the cost shows in that month', expensesFor(state, 'PG1', '2026-11').byCategory['EB Electricity'], 5000);
-  check('and not in the next month', expensesFor(state, 'PG1', '2026-12').byCategory['EB Electricity'], 0);
+  // The meter bills every two months, so the bill covers two months of power
+  // used: the cost is shared over them (see G2) instead of landing whole in
+  // one month.
+  check('the cost shows in that month', expensesFor(state, 'PG1', '2026-11').byCategory['EB Electricity'], 2500);
+  check('and the other month of the cycle carries its share', expensesFor(state, 'PG1', '2026-10').byCategory['EB Electricity'], 2500);
+  check('and not in a month the bill does not cover', expensesFor(state, 'PG1', '2026-12').byCategory['EB Electricity'], 0);
   const owing = unpaidEbBills(state, 'PG1', '2026-11');
   check('it is a liability', owing.total, 5000);
   check('one bill is outstanding', owing.count, 1);
@@ -141,7 +145,8 @@ console.log('\n=== GND-27. An electricity bill that is not paid is still a liabi
   check('nothing is outstanding', ebOutstanding(legacy), 0);
   check('it keeps the month it was paid in', ebServiceMonth(legacy), '2026-10');
   const state: AppState = { ...seedSampleState(), ebBills: [legacy] };
-  check('the cost is in the month it was paid', expensesFor(state, 'PG1', '2026-10').byCategory['EB Electricity'], 5000);
+  check('the cost is in the month it was paid', expensesFor(state, 'PG1', '2026-10').byCategory['EB Electricity'], 2500);
+  check('and the month before it carries its share', expensesFor(state, 'PG1', '2026-09').byCategory['EB Electricity'], 2500);
   check('and no liability', unpaidEbBills(state, 'PG1', '2026-11').total, 0);
 }
 
